@@ -10076,3 +10076,16 @@ v_lawd_map 3개 동         5,568ms → 37ms
   → Teomoony-f/_backup/public/ 로 **옮김**(지우지 않음). 확인: /app.js.bak_auth · /style.css.bak_theme · /index.html.bak_topbar 404, /app.js 200.
 - ★ 앞으로 public 안에 백업을 만들지 않는다 — 백업은 _backup/ 에. (git 도입 전까지)
 - 프론트는 바닐라 유지로 정함(사장님과). 다음: git 시작 → app.js 를 브라우저 기본 모듈로 나누기.
+
+### 11-174 git · SEO 1~4단계 (2026-10-22 07:10~07:40, 사장님 "ㄱㄱ")
+- **git 시작**: Teomoony(89b2d0e) · Teomoony-f(c704064). .gitignore 에 *.bak* · _backup · _restore · _to_delete · etl/data · etl/_queue · _버림_ SQL · logs 추가.
+  커밋 전 .env 값이 든 파일 검사 — etl/config.json 만(이미 제외). git 잠금 파일 때문에 두 폴더 삭제 권한을 받음(프로젝트 파일은 안 지움).
+  ★ 이제부터 백업은 .bak 대신 **커밋**. (VM 쪽 git 으로 만들었다 — Windows git 이 'dubious ownership' 을 말하면 safe.directory 추가)
+- **첫 화면**: title '터무니 · 서울·안양 아파트 단지 조회 — 건축물대장 · 실거래 · 토지', meta description, canonical, og.
+- **/c/:id**: 서버가 title · description · canonical · og · JSON-LD(ApartmentComplex) · #detail 안의 **보이는** 요약(제원 · 3년 최고 · 최근 매매 5)을 넣어 보냄.
+  흡수 단지 301(298575 → 298577), 없는 단지 404 + noindex. app.js 가 단지를 열면 /c/:id, 닫으면 /. 바깥(teomoony.com/c/69657)에서 확인.
+  index.html 의 style.css · app.js 를 절대 경로로.
+- **robots.txt**(/api/ 막음 · Sitemap 줄) · **sitemap.xml**(100세대 이상 4,034곳 + 첫 화면, lastmod 없음). 넓힐 땐 server.js `사이트맵_최소세대`.
+  Cloudflare 가장자리에 옛 robots.txt(Cloudflare 관리형)가 남아 있을 수 있음 — ?v=2 로는 새 것 확인.
+- 남은 5단계: 구글 서치콘솔 등록(사장님 계정).
+- 07:22 사장님이 서치콘솔 도메인 속성 teomoony.com 소유권 확인(DNS) · https://teomoony.com/sitemap.xml 제출 — 구글이 같은 날 바로 읽음. DNS TXT 레코드는 지우면 안 됨.
