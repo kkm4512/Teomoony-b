@@ -54,10 +54,16 @@ def main():
     conn = pymssql.connect(server=e.get("DB_HOST", "127.0.0.1"), port=int(e.get("DB_PORT", 11433)),
                            user=e.get("DB_USER", "sa"), password=e.get("DB_PASSWORD", ""),
                            database=e.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
+    # ★ 2026-10-22 실측: 요양기호 하나가 **519곳**에 똑같이 붙어 있다(아직 기호가 안 매겨진 곳의 자리표시 값으로 보인다).
+    #   그대로 넣으면 519곳이 한 줄로 뭉쳐 마지막 값이 이긴다 — 조용히 틀린 값. 두 번 이상 나오는 기호는 **넣지 않는다**.
+    from collections import Counter
+    셈 = Counter(x.get("암호화된요양기호") for x in out)
+    겹침 = {y for y, c in 셈.items() if y and c > 1}
+    if 겹침: print(f"  같은 요양기호가 여러 곳에 붙은 것 {len(겹침)}개 · {sum(셈[y] for y in 겹침):,}행 — 넣지 않음", flush=True)
     cur = conn.cursor(); n = 0
     for x in out:
         y = x.get("암호화된요양기호")
-        if not y: continue
+        if not y or y in 겹침: continue
         v = (기준일, x.get("요양기관명"), x.get("요양종별"), x.get("표시과목명"), x.get("개설일자"),
              x.get("시도명"), x.get("시군구명"), x.get("도로명주소"))
         cur.execute("""UPDATE silver.hira_open SET 기준일=%s, 요양기관명=%s, 요양종별=%s, 표시과목=%s, 개설일자=%s,
