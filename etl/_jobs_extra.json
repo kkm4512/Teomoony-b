@@ -231,5 +231,9 @@
   "hira-open": [
     "python",
     "load_hira_open.py"
+  ],
+  "applyhome-all": [
+    "python",
+    "load_applyhome.py"
   ]
 }

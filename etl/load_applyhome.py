@@ -90,15 +90,25 @@ def main():
     e = env(); key = e.get("DATA_GO_KR_KEY", "")
     if not key: sys.exit(".env 의 DATA_GO_KR_KEY 가 비어 있습니다")
 
-    seoul = pages(key, "getAPTLttotPblancDetail", {"cond[SUBSCRPT_AREA_CODE_NM::EQ]": "서울"})
-    gg    = pages(key, "getAPTLttotPblancDetail", {"cond[SUBSCRPT_AREA_CODE_NM::EQ]": "경기"})
-    pbl   = seoul + [x for x in gg if "안양시" in (x.get("HSSPLY_ADRES") or "")]
-    print(f"공고: 서울 {len(seoul)} · 경기 {len(gg)} 중 안양 {len(pbl) - len(seoul)} → {len(pbl)}", flush=True)
-    mdl = []
-    for i, no in enumerate(sorted({x["HOUSE_MANAGE_NO"] for x in pbl}), 1):
-        mdl += pages(key, "getAPTLttotPblancMdl", {"cond[HOUSE_MANAGE_NO::EQ]": no})
-        if i % 50 == 0: print(f"  주택형 {i} 공고 · {len(mdl)}행", flush=True)
-    print(f"주택형: {len(mdl)}행", flush=True)
+    # ★ 2026-10-22 (299): APT 말고도 받는다 — 같은 서비스의 다른 목록. (종류, 공고 목록, 주택형 목록)
+    KINDS = [("APT", "getAPTLttotPblancDetail", "getAPTLttotPblancMdl"),
+             ("URBTY", "getUrbtyOfctlLttotPblancDetail", "getUrbtyOfctlLttotPblancMdl"),   # 오피스텔 · 도시형생활주택
+             ("REMNDR", "getRemndrLttotPblancDetail", "getRemndrLttotPblancMdl"),          # 무순위 · 불법행위 재공급
+             ("PBLPVT", "getPblPvtRentLttotPblancDetail", "getPblPvtRentLttotPblancMdl"),  # 공공지원민간임대
+             ("OPT", "getOPTLttotPblancDetail", "getOPTLttotPblancMdl")]                   # 임의공급
+    pbl, mdl = [], []
+    for kind, op_d, op_m in KINDS:
+        seoul = pages(key, op_d, {"cond[SUBSCRPT_AREA_CODE_NM::EQ]": "서울"})
+        gg    = pages(key, op_d, {"cond[SUBSCRPT_AREA_CODE_NM::EQ]": "경기"})
+        these = seoul + [x for x in gg if "안양시" in (x.get("HSSPLY_ADRES") or "")]
+        for x in these: x["_kind"] = kind
+        pbl += these
+        m0 = len(mdl)
+        for no in sorted({x["HOUSE_MANAGE_NO"] for x in these}):
+            for m in pages(key, op_m, {"cond[HOUSE_MANAGE_NO::EQ]": no}):
+                m["_kind"] = kind; mdl.append(m)
+        print(f"{kind}: 공고 서울 {len(seoul)} · 경기 {len(gg)} 중 안양 {len(these) - len(seoul)} → {len(these)} · 주택형 {len(mdl) - m0}", flush=True)
+    print(f"공고 {len(pbl)} · 주택형 {len(mdl)}행", flush=True)
     if a.probe: return
 
     conn = pymssql.connect(server=e.get("DB_HOST", "127.0.0.1"), port=int(e.get("DB_PORT", 11433)),
@@ -132,37 +142,45 @@ def main():
     for x in pbl:
         d, cd = 풀기(x.get("HSSPLY_ADRES"))
         if not cd: 못 += 1
+        첫 = lambda *ks: next((x.get(k) for k in ks if x.get(k)), None)   # 종류마다 칸 이름이 조금씩 다르다
         vals = (x.get("HOUSE_NM"), x.get("HSSPLY_ADRES"), d["sgg"], d["emd"], d["san"], d["bun"], d["ji"], d["근거"], cd,
                 d["도로"], d["건물본번"], d["건물부번"],
-                x.get("HOUSE_SECD_NM"), x.get("HOUSE_DTL_SECD_NM"), x.get("RENT_SECD_NM"),
-                int(x.get("TOT_SUPLY_HSHLDCO") or 0) or None, x.get("RCRIT_PBLANC_DE"), x.get("RCEPT_BGNDE"),
-                x.get("RCEPT_ENDDE"), x.get("PRZWNER_PRESNATN_DE"), (x.get("MVN_PREARNGE_YM") or None),
+                x.get("HOUSE_SECD_NM"), 첫("HOUSE_DTL_SECD_NM", "HOUSE_DETAIL_SECD_NM"), x.get("RENT_SECD_NM"),
+                int(x.get("TOT_SUPLY_HSHLDCO") or 0) or None, x.get("RCRIT_PBLANC_DE"),
+                첫("RCEPT_BGNDE", "SUBSCRPT_RCEPT_BGNDE", "SPSPLY_RCEPT_BGNDE", "GNRL_RCEPT_BGNDE"),
+                첫("RCEPT_ENDDE", "SUBSCRPT_RCEPT_ENDDE", "GNRL_RCEPT_ENDDE", "SPSPLY_RCEPT_ENDDE"),
+                x.get("PRZWNER_PRESNATN_DE"), (x.get("MVN_PREARNGE_YM") or None),
                 x.get("BSNS_MBY_NM"), x.get("CNSTRCT_ENTRPS_NM"), x.get("PBLANC_URL"), x.get("SUBSCRPT_AREA_CODE_NM"),
-                json.dumps(x, ensure_ascii=False))
+                json.dumps(x, ensure_ascii=False), x["_kind"])
         k = (str(x["HOUSE_MANAGE_NO"]), str(x["PBLANC_NO"]))
         cur.execute("""UPDATE silver.applyhome_pblanc SET house_nm=%s, hssply_adres=%s, 주소_시군구=%s, 주소_동=%s, 주소_산=%s,
                          주소_본번=%s, 주소_부번=%s, 주소근거=%s, lawd_cd=%s, 주소_도로=%s, 주소_건물본번=%s, 주소_건물부번=%s, house_secd_nm=%s, house_dtl_secd_nm=%s, rent_secd_nm=%s,
                          tot_suply=%s, rcrit_pblanc_de=%s, rcept_bgnde=%s, rcept_endde=%s, przwner_de=%s, mvn_prearnge_ym=%s,
-                         bsns_mby_nm=%s, cnstrct_entrps_nm=%s, pblanc_url=%s, subscrpt_area_nm=%s, raw_json=%s, loaded_at=SYSDATETIME()
+                         bsns_mby_nm=%s, cnstrct_entrps_nm=%s, pblanc_url=%s, subscrpt_area_nm=%s, raw_json=%s, 공고종류=%s, loaded_at=SYSDATETIME()
                         WHERE house_manage_no=%s AND pblanc_no=%s""", vals + k)
         if cur.rowcount == 0:
             cur.execute("""INSERT INTO silver.applyhome_pblanc (house_nm, hssply_adres, 주소_시군구, 주소_동, 주소_산, 주소_본번, 주소_부번,
                              주소근거, lawd_cd, 주소_도로, 주소_건물본번, 주소_건물부번, house_secd_nm, house_dtl_secd_nm, rent_secd_nm, tot_suply, rcrit_pblanc_de, rcept_bgnde,
                              rcept_endde, przwner_de, mvn_prearnge_ym, bsns_mby_nm, cnstrct_entrps_nm, pblanc_url, subscrpt_area_nm,
-                             raw_json, house_manage_no, pblanc_no)
-                           VALUES (""" + ",".join(["%s"] * 28) + ")", vals + k)
+                             raw_json, 공고종류, house_manage_no, pblanc_no)
+                           VALUES (""" + ",".join(["%s"] * 29) + ")", vals + k)
         n += 1
     for x in mdl:
-        ty = x.get("HOUSE_TY") or ""
-        m2 = re.match(r"\s*0*(\d+(?:\.\d+)?)", ty); 전용 = float(m2.group(1)) if m2 else None
+        ty = x.get("HOUSE_TY") or x.get("TP") or ""
+        m2 = re.match(r"\s*0*(\d+(?:\.\d+)?)", x.get("HOUSE_TY") or ""); 전용 = float(m2.group(1)) if m2 else None
+        if x.get("EXCLUSE_AR"):          # 오피스텔·임대는 전용면적이 따로 온다
+            try: 전용 = float(str(x["EXCLUSE_AR"]).replace(",", ""))
+            except Exception: pass
         def i(v):
             try: return int(str(v).replace(",", ""))
             except Exception: return None
         def f(v):
             try: return float(str(v).replace(",", ""))
             except Exception: return None
+        # ★ 분양가: APT·무순위·임의공급 = LTTOT_TOP_AMOUNT(최고) · 오피스텔/도시형 = SUPLY_AMOUNT · 공공지원민간임대는 **분양가가 아니라** 넣지 않는다
+        금액 = None if x["_kind"] == "PBLPVT" else (i(x.get("LTTOT_TOP_AMOUNT")) if x.get("LTTOT_TOP_AMOUNT") else i(x.get("SUPLY_AMOUNT")))
         vals = (ty, 전용, f(x.get("SUPLY_AR")), i(x.get("SUPLY_HSHLDCO")), i(x.get("SPSPLY_HSHLDCO")),
-                i(x.get("LTTOT_TOP_AMOUNT")), json.dumps(x, ensure_ascii=False))
+                금액, json.dumps(x, ensure_ascii=False))
         k = (str(x["HOUSE_MANAGE_NO"]), str(x["PBLANC_NO"]), str(x["MODEL_NO"]))
         cur.execute("""UPDATE silver.applyhome_mdl SET house_ty=%s, 전용m2=%s, suply_ar=%s, suply_hshldco=%s, spsply_hshldco=%s,
                          top_amount_man=%s, raw_json=%s, loaded_at=SYSDATETIME()
