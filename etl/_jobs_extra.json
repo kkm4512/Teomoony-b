@@ -235,5 +235,9 @@
   "applyhome-all": [
     "python",
     "load_applyhome.py"
+  ],
+  "applyhome-cmpet": [
+    "python",
+    "load_applyhome_cmpet.py"
   ]
 }
