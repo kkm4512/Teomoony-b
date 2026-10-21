@@ -1,0 +1,4 @@
+import time
+for i in range(3):
+    print(f"짧은 줄 {i}", flush=True)
+    time.sleep(0.4)

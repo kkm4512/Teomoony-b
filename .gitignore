@@ -1,0 +1,34 @@
+# 키 - 절대 커밋 금지
+.env
+etl/config.json
+
+# 수집 원본
+etl/raw/
+
+# 파이썬
+__pycache__/
+*.pyc
+.venv/
+
+# 대용량 적재 파일
+deploy/bulk/*
+!deploy/bulk/.gitkeep
+
+# 적재 로그
+logs/
+
+# 카카오 토큰 캐시
+etl/.kakao_token.json
+
+# ★ 2026-10-22 git 시작 — 백업·작업 부산물은 git 이 대신한다
+*.bak
+*.bak_*
+*.bak[0-9]*
+_backup/
+_restore/
+_to_delete/
+etl/data/
+etl/_queue/
+etl/*.out.txt
+deploy/sql/_버림_*
+.write_test*

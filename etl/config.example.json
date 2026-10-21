@@ -1,0 +1,11 @@
+{
+  "service_key": "여기에 공공데이터포털 Decoding 키를 넣으세요",
+  "sleep_sec": 0.2,
+  "db": {
+    "host": "127.0.0.1",
+    "port": 11433,
+    "user": "sa",
+    "password": "<.env 의 DB_PASSWORD 와 같게>",
+    "database": "Teomoony"
+  }
+}
