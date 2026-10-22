@@ -65,6 +65,14 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_redev_plan_link_sn')
     CREATE INDEX ix_redev_plan_link_sn ON gold.redev_plan_link (present_sn);
 GO
+IF OBJECT_ID('ops.redev_plan_mismatch') IS NULL
+CREATE TABLE ops.redev_plan_mismatch (
+    basic_info_seq   BIGINT        NOT NULL CONSTRAINT pk_redev_plan_mismatch PRIMARY KEY,
+    코드구역         VARCHAR(40)   NOT NULL,     -- 자치구·소분류·면적이 가리킨 구역
+    지번구역         VARCHAR(40)   NOT NULL,     -- 위치 지번이 가리킨 구역
+    기록시각         DATETIME2(0)  NOT NULL DEFAULT SYSDATETIME()
+);
+GO
 CREATE OR ALTER PROCEDURE gold.usp_link_redev_plan
 AS
 BEGIN
@@ -103,11 +111,39 @@ BEGIN
        AND NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel c0 WHERE c0.pnu = p.pnu AND c0.is_current = 1);
     DELETE FROM #rc WHERE 차 IS NULL OR 차 > 5;
 
+    /* ③ (2026-10-22 사장님 "굳 ㄱㄱ") **주 연결 = 코드 조합 키** — 두 자료 모두 서울플랜+ 체계의 코드를 쓴다:
+         자치구 코드(signgu_se = SITE_CODE) + 사업 소분류 코드(sclas_cl = CLASSIFY_L) + 면적(소수점까지 같음, DGM_AR = BSNS_AREA).
+       셋 다 같고 후보가 하나일 때만. 지번(②)은 **확인용** — 둘이 다른 구역을 가리키면 잇지 않고 ops.redev_plan_mismatch 에 남긴다. */
+    IF OBJECT_ID('tempdb..#kc') IS NOT NULL DROP TABLE #kc;
+    SELECT p.basic_info_seq, present_sn = MIN(z.present_sn)
+      INTO #kc
+      FROM silver.seoul_redev_plan p
+      JOIN silver.redev_zone z ON z.is_current = 1 AND z.signgu_se = p.sgg_cd AND z.sclas_cl = p.소분류코드 AND z.area_m2 = p.사업면적
+     WHERE p.사업면적 > 0
+     GROUP BY p.basic_info_seq HAVING COUNT(DISTINCT z.present_sn) = 1;
+    IF OBJECT_ID('tempdb..#ac') IS NOT NULL DROP TABLE #ac;
+    SELECT basic_info_seq, present_sn = MIN(present_sn), 차 = MIN(차)
+      INTO #ac FROM #rc GROUP BY basic_info_seq HAVING COUNT(DISTINCT present_sn) = 1;
+
     BEGIN TRAN;
         DELETE FROM gold.redev_plan_link;
+        DELETE FROM ops.redev_plan_mismatch;
+        /* 코드도 맞고 지번도 같은 구역 */
         INSERT INTO gold.redev_plan_link (basic_info_seq, present_sn, 근거, 면적차pct)
-        SELECT basic_info_seq, MIN(present_sn), N'사업 위치 지번이 구역 안 · 면적 5% 안 — 후보 1', MIN(차)
-          FROM #rc GROUP BY basic_info_seq HAVING COUNT(DISTINCT present_sn) = 1;
+        SELECT k.basic_info_seq, k.present_sn, N'코드 일치(자치구·소분류·면적) · 위치 지번도 같은 구역', 0
+          FROM #kc k JOIN #ac a ON a.basic_info_seq = k.basic_info_seq AND a.present_sn = k.present_sn;
+        /* 코드는 맞고 지번은 못 봄(지번을 못 풀었거나 필지가 없음) */
+        INSERT INTO gold.redev_plan_link (basic_info_seq, present_sn, 근거, 면적차pct)
+        SELECT k.basic_info_seq, k.present_sn, N'코드 일치(자치구·소분류·면적) — 위치 지번으로는 확인 못 함', 0
+          FROM #kc k WHERE NOT EXISTS (SELECT 1 FROM #ac a WHERE a.basic_info_seq = k.basic_info_seq);
+        /* 둘이 다른 구역 → 잇지 않고 남긴다 */
+        INSERT INTO ops.redev_plan_mismatch (basic_info_seq, 코드구역, 지번구역)
+        SELECT k.basic_info_seq, k.present_sn, a.present_sn
+          FROM #kc k JOIN #ac a ON a.basic_info_seq = k.basic_info_seq AND a.present_sn <> k.present_sn;
+        /* 코드로는 못 찾고 지번 + 면적 5% 로만 찾은 것 */
+        INSERT INTO gold.redev_plan_link (basic_info_seq, present_sn, 근거, 면적차pct)
+        SELECT a.basic_info_seq, a.present_sn, N'위치 지번이 구역 안 · 면적 5% 안(코드는 안 맞음)', a.차
+          FROM #ac a WHERE NOT EXISTS (SELECT 1 FROM #kc k WHERE k.basic_info_seq = a.basic_info_seq);
         /* 한 구역에 계획이 둘 이상 붙으면 둘 다 뺀다 — 어느 쪽이 그 구역의 계획인지 모른다 */
         DELETE l FROM gold.redev_plan_link l
          WHERE l.present_sn IN (SELECT present_sn FROM gold.redev_plan_link GROUP BY present_sn HAVING COUNT(*) > 1);
@@ -117,6 +153,10 @@ BEGIN
            법정동 = (SELECT COUNT(*) FROM silver.seoul_redev_plan WHERE lawd_cd IS NOT NULL),
            필지 = (SELECT COUNT(*) FROM silver.seoul_redev_plan p WHERE EXISTS (SELECT 1 FROM silver.cadastral_parcel cp WHERE cp.pnu = p.pnu AND cp.is_current = 1)),
            후보있음 = (SELECT COUNT(DISTINCT basic_info_seq) FROM #rc),
-           이음 = (SELECT COUNT(*) FROM gold.redev_plan_link);
+           이음 = (SELECT COUNT(*) FROM gold.redev_plan_link),
+           코드지번둘다 = (SELECT COUNT(*) FROM gold.redev_plan_link WHERE 근거 LIKE N'코드 일치%같은 구역'),
+           코드만 = (SELECT COUNT(*) FROM gold.redev_plan_link WHERE 근거 LIKE N'코드 일치%확인 못 함'),
+           지번만 = (SELECT COUNT(*) FROM gold.redev_plan_link WHERE 근거 LIKE N'위치 지번%'),
+           어긋남 = (SELECT COUNT(*) FROM ops.redev_plan_mismatch);
 END
 GO
