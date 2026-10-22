@@ -519,6 +519,32 @@ def handle(path, quiet=False):
 
 _bg = {"t": None}
 
+PAR_MAX = 4
+_par = {}   # 이름 → 스레드
+
+
+def par_watch():
+    """병렬 줄(-par) — 2026-10-22 사장님 "병렬로 할 수 있는 건 최대한 병렬로".
+    ★ 앞줄·뒷줄과 따로, **이름이 -par 로 끝나는 작업은 각자 스레드**로 같이 돈다(최대 PAR_MAX).
+    ★ 같은 이름은 하나만. 상태 파일은 안 쓴다(quiet) — 로그만.
+    ★ 쓰는 표가 겹치는 작업끼리는 -par 로 태우지 마라(교착 1205). 서로 다른 표·다른 API 키인 것만.
+    """
+    while True:
+        try:
+            for k in [k for k, t in _par.items() if not t.is_alive()]:
+                _par.pop(k, None)
+            jobs = sorted(f for f in os.listdir(QDIR) if f.endswith("-par.job"))
+            for f in jobs:
+                if len(_par) >= PAR_MAX: break
+                if f in _par: continue
+                print(f"  [{now()}] 병렬  {f[:-4]}  (앞줄·뒷줄과 같이 돕니다)")
+                t = threading.Thread(target=handle, args=(os.path.join(QDIR, f),), kwargs={"quiet": True}, daemon=True)
+                _par[f] = t; t.start()
+        except Exception as e:
+            print(f"  병렬 감시 오류(무시하고 계속): {e}")
+        time.sleep(3)
+
+
 def bg_watch():
     """뒷줄(-bg) 전용 감시 — **메인 루프와 따로 돈다**.
 
@@ -561,6 +587,7 @@ def main():
     print()
     write_status(state="idle", started=now())
     threading.Thread(target=bg_watch, daemon=True).start()
+    threading.Thread(target=par_watch, daemon=True).start()
     while True:
         try:
             jobs = sorted(f for f in os.listdir(QDIR) if f.endswith(".job"))
@@ -574,6 +601,12 @@ def main():
             #   **flag 없이 stop 만 넣어서 감시기를 죽여 버렸다.** 물리적으로
             #   가지 않으면 못 살리는 상태가 됐다. 두 동작을 하나로 묶는다.
             if f == "restart.job":
+                # ★ 2026-10-22: 뒷줄·병렬 줄이 돌고 있으면 restart 를 **미룬다**.
+                #   프로세스가 끝나면 데몬 스레드는 죽지만 자식 프로세스는 계속 돈다 →
+                #   .job 이 done 으로 안 옮겨져 재시작 뒤 **같은 작업이 두 번** 뜬다.
+                busy = [k for k, t in _par.items() if t.is_alive()]
+                if (_bg.get("t") and _bg["t"].is_alive()) or busy:
+                    continue
                 print(f"  [{now()}] restart 받음 — 코드를 다시 읽고 돌아옵니다.")
                 try: os.remove(os.path.join(QDIR, f))
                 except Exception: pass
@@ -595,6 +628,8 @@ def main():
                 return
             if f[:-4].endswith("-bg"):
                 continue                # 뒷줄 스레드가 따로 집는다
+            if f[:-4].endswith("-par"):
+                continue                # 병렬 줄 스레드가 따로 집는다
             handle(os.path.join(QDIR, f))
         write_status(state="idle")
         time.sleep(POLL)

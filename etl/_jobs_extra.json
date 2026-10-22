@@ -307,5 +307,19 @@
  "a2-mois-pharmacy": [
   "python",
   "load_mois_pharmacy.py"
+ ],
+ "a-exar-anyang-par": [
+  "python",
+  "run_exar_anyang.py"
+ ],
+ "a2-mois-pharmacy-par": [
+  "python",
+  "load_mois_pharmacy.py"
+ ],
+ "b-ned-aphus-par": [
+  "python",
+  "load_ned_aphus.py",
+  "--workers",
+  "4"
  ]
 }
