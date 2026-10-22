@@ -291,5 +291,9 @@
   "load_land_move.py",
   "--workers",
   "4"
+ ],
+ "a-exar-anyang": [
+  "python",
+  "run_exar_anyang.py"
  ]
 }
