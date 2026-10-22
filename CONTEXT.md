@@ -10168,3 +10168,12 @@ v_lawd_map 3개 동         5,568ms → 37ms
 
 ### 11-184 어린이집 (2026-10-22 10:27)
 - 보육정보공개 API(api.childcare.go.kr, 한국사회보장정보원): cpmsapi021 전국 어린이집 정보 · cpmsapi030 어린이집별 기본정보. **https** 로 닿음(http 는 막힘). 키 필요 — .env 에 아직 없음(CHILDCARE_KEY 로 넣어 주시기로 요청).
+
+### 11-185 어린이집 적재 + 화면 (2026-10-22 10:31~10:45)
+- 보육정보공개 cpmsapi030 '어린이집별 기본정보'(https://api.childcare.go.kr/mediate/rest/cpmsapi030/cpmsapi030/request?key=&arcode=시군구). XML.
+  칸: stcode · 이름 · 유형(국공립·민간·가정·직장…) · 상태(정상·휴지·재개) · 정원(crcapat) · 현원(crchcnt) · 반·아동(나이별) · 교직원 · 통학차량 · 좌표(la/lo) · 기준일(datastdrdt).
+- **303** silver.childcare(stcode PK, 이 자료의 0 은 '없음' 이라 빈칸만 NULL · 다 받은 시군구에서 안 나온 곳 is_current=0) · gold.v_complex_childcare(500m).
+  적재기 etl/load_childcare.py(키 = CHILDCARE_KEY). 서울 25구 3,935 + 안양 324(arcode 41170 — 41171+41173 은 260) = **4,259곳**, 좌표 없음 7.
+  이번엔 사장님이 채팅으로 준 키를 VM 임시파일로 한 번 쓰고 지움(--sql-out → /api/_apply). **.env 에 CHILDCARE_KEY 를 넣어야 작업 줄(childcare)로 다시 받을 수 있다.**
+- 화면: 주변 탭 유치원 밑 '어린이집' — 500m 안 유형별 수 · 가까운 순 10곳(정원·현원·반·통학차량·연장형 등 원문), 기준일 표시. 지도 점 kind=childcare(거름 = 유형).
+- _jobs_extra: childcare · closed-bld(--sgg 11290 11380) 추가.

@@ -1,243 +1,254 @@
 {
-  "gold-bg": [
-    "python",
-    "seoul_gold.py"
-  ],
-  "gold-only-bg": [
-    "python",
-    "seoul_gold.py",
-    "--skip-cadastral"
-  ],
-  "cadastral-bg": [
-    "python",
-    "load_cadastral.py"
-  ],
-  "building-bg": [
-    "python",
-    "load_building.py"
-  ],
-  "academy-probe": [
-    "python",
-    "load_academy.py",
-    "--probe"
-  ],
-  "academy-bg": [
-    "python",
-    "academy_go.py"
-  ],
-  "academy-probe-bg": [
-    "python",
-    "load_academy.py",
-    "--probe"
-  ],
-  "seoul-rest-bg": [
-    "python",
-    "seoul_rest.py"
-  ],
-  "kinder-only-bg": [
-    "python",
-    "seoul_rest.py",
-    "--only",
-    "kinder"
-  ],
-  "ddl-bg": [
-    "python",
-    "apply_sql.py",
-    "210_drop_registry.sql"
-  ],
-  "a-cadastral-bg": [
-    "python",
-    "load_cadastral.py",
-    "--skip-loaded"
-  ],
-  "z-kapt-bg": [
-    "python",
-    "load_kapt.py",
-    "--sleep",
-    "0.3",
-    "--sgg",
-    "11110",
-    "11140",
-    "11170",
-    "11200",
-    "11215",
-    "11230",
-    "11260",
-    "11290",
-    "11305",
-    "11320",
-    "11350",
-    "11380",
-    "11410",
-    "11440",
-    "11470",
-    "11500",
-    "11530",
-    "11545",
-    "11560",
-    "11590",
-    "11620",
-    "11650",
-    "11680",
-    "11710",
-    "11740",
-    "41171",
-    "41173"
-  ],
-  "aa-landchar-bg": [
-    "python",
-    "load_land_char.py",
-    "--limit",
-    "500",
-    "--workers",
-    "8"
-  ],
-  "zz-landchar-bg": [
-    "python",
-    "load_land_char.py",
-    "--skip-loaded",
-    "--workers",
-    "12"
-  ],
-  "b-hakgudo-bg": [
-    "python",
-    "load_school_zone.py"
-  ],
-  "za-pms-bg": [
-    "python",
-    "run_plan.py",
-    "go",
-    "--ops",
-    "pms",
-    "--retry",
-    "--workers",
-    "6"
-  ],
-  "a-lawdgeom-bg": [
-    "python",
-    "load_lawd_geom.py",
-    "--sgg",
-    "11110",
-    "11140",
-    "11170",
-    "11200",
-    "11215",
-    "11230",
-    "11260",
-    "11290",
-    "11305",
-    "11320",
-    "11350",
-    "11380",
-    "11410",
-    "11440",
-    "11470",
-    "11500",
-    "11530",
-    "11545",
-    "11560",
-    "11590",
-    "11620",
-    "11650",
-    "11680",
-    "11710",
-    "11740",
-    "41171",
-    "41173"
-  ],
-  "ab-tradepick-bg": [
-    "python",
-    "apply_sql.py",
-    "283_run_trade_pick.sql"
-  ],
-  "ac-admsplit-bg": [
-    "python",
-    "apply_sql.py",
-    "284_adm_split.sql"
-  ],
-  "aa-merge-bg": [
-    "python",
-    "apply_sql.py",
-    "286_merge_plan.sql",
-    "287_merge_apply.sql"
-  ],
-  "aa-trademax-bg": [
-    "python",
-    "apply_sql.py",
-    "288_trade_max.sql"
-  ],
-  "a-applyhome-bg": [
-    "python",
-    "load_applyhome.py"
-  ],
-  "ab-silv-bg": [
-    "python",
-    "silv_go.py",
-    "--from",
-    "202001",
-    "--to",
-    "202610",
-    "--workers",
-    "4"
-  ],
-  "ac-landuse-bg": [
-    "python",
-    "load_land_use.py",
-    "--workers",
-    "6"
-  ],
-  "a-par-bg": [
-    "python",
-    "run_parallel.py",
-    "a-applyhome-bg",
-    "ab-silv-bg",
-    "ac-landuse-bg"
-  ],
-  "ad-hira-bg": [
-    "python",
-    "load_hira.py"
-  ],
-  "zz-landchar6-bg": [
-    "python",
-    "load_land_char.py",
-    "--skip-loaded",
-    "--workers",
-    "6"
-  ],
-  "plan-rest": [
-    "python",
-    "run_plan.py",
-    "plan",
-    "--ops",
-    "atch,basis,exar,expos,flr,hsprc,jijigu,pmsdong,recap,title"
-  ],
-  "go-rest": [
-    "python",
-    "run_plan.py",
-    "go",
-    "--ops",
-    "atch,basis,exar,expos,flr,hsprc,jijigu,pmsdong,recap,title",
-    "--retry",
-    "--workers",
-    "6"
-  ],
-  "zz-landchar3-bg": [
-    "python",
-    "load_land_char.py",
-    "--skip-loaded",
-    "--workers",
-    "3"
-  ],
-  "hira-open": [
-    "python",
-    "load_hira_open.py"
-  ],
-  "applyhome-all": [
-    "python",
-    "load_applyhome.py"
-  ],
-  "applyhome-cmpet": [
-    "python",
-    "load_applyhome_cmpet.py"
-  ]
+ "gold-bg": [
+  "python",
+  "seoul_gold.py"
+ ],
+ "gold-only-bg": [
+  "python",
+  "seoul_gold.py",
+  "--skip-cadastral"
+ ],
+ "cadastral-bg": [
+  "python",
+  "load_cadastral.py"
+ ],
+ "building-bg": [
+  "python",
+  "load_building.py"
+ ],
+ "academy-probe": [
+  "python",
+  "load_academy.py",
+  "--probe"
+ ],
+ "academy-bg": [
+  "python",
+  "academy_go.py"
+ ],
+ "academy-probe-bg": [
+  "python",
+  "load_academy.py",
+  "--probe"
+ ],
+ "seoul-rest-bg": [
+  "python",
+  "seoul_rest.py"
+ ],
+ "kinder-only-bg": [
+  "python",
+  "seoul_rest.py",
+  "--only",
+  "kinder"
+ ],
+ "ddl-bg": [
+  "python",
+  "apply_sql.py",
+  "210_drop_registry.sql"
+ ],
+ "a-cadastral-bg": [
+  "python",
+  "load_cadastral.py",
+  "--skip-loaded"
+ ],
+ "z-kapt-bg": [
+  "python",
+  "load_kapt.py",
+  "--sleep",
+  "0.3",
+  "--sgg",
+  "11110",
+  "11140",
+  "11170",
+  "11200",
+  "11215",
+  "11230",
+  "11260",
+  "11290",
+  "11305",
+  "11320",
+  "11350",
+  "11380",
+  "11410",
+  "11440",
+  "11470",
+  "11500",
+  "11530",
+  "11545",
+  "11560",
+  "11590",
+  "11620",
+  "11650",
+  "11680",
+  "11710",
+  "11740",
+  "41171",
+  "41173"
+ ],
+ "aa-landchar-bg": [
+  "python",
+  "load_land_char.py",
+  "--limit",
+  "500",
+  "--workers",
+  "8"
+ ],
+ "zz-landchar-bg": [
+  "python",
+  "load_land_char.py",
+  "--skip-loaded",
+  "--workers",
+  "12"
+ ],
+ "b-hakgudo-bg": [
+  "python",
+  "load_school_zone.py"
+ ],
+ "za-pms-bg": [
+  "python",
+  "run_plan.py",
+  "go",
+  "--ops",
+  "pms",
+  "--retry",
+  "--workers",
+  "6"
+ ],
+ "a-lawdgeom-bg": [
+  "python",
+  "load_lawd_geom.py",
+  "--sgg",
+  "11110",
+  "11140",
+  "11170",
+  "11200",
+  "11215",
+  "11230",
+  "11260",
+  "11290",
+  "11305",
+  "11320",
+  "11350",
+  "11380",
+  "11410",
+  "11440",
+  "11470",
+  "11500",
+  "11530",
+  "11545",
+  "11560",
+  "11590",
+  "11620",
+  "11650",
+  "11680",
+  "11710",
+  "11740",
+  "41171",
+  "41173"
+ ],
+ "ab-tradepick-bg": [
+  "python",
+  "apply_sql.py",
+  "283_run_trade_pick.sql"
+ ],
+ "ac-admsplit-bg": [
+  "python",
+  "apply_sql.py",
+  "284_adm_split.sql"
+ ],
+ "aa-merge-bg": [
+  "python",
+  "apply_sql.py",
+  "286_merge_plan.sql",
+  "287_merge_apply.sql"
+ ],
+ "aa-trademax-bg": [
+  "python",
+  "apply_sql.py",
+  "288_trade_max.sql"
+ ],
+ "a-applyhome-bg": [
+  "python",
+  "load_applyhome.py"
+ ],
+ "ab-silv-bg": [
+  "python",
+  "silv_go.py",
+  "--from",
+  "202001",
+  "--to",
+  "202610",
+  "--workers",
+  "4"
+ ],
+ "ac-landuse-bg": [
+  "python",
+  "load_land_use.py",
+  "--workers",
+  "6"
+ ],
+ "a-par-bg": [
+  "python",
+  "run_parallel.py",
+  "a-applyhome-bg",
+  "ab-silv-bg",
+  "ac-landuse-bg"
+ ],
+ "ad-hira-bg": [
+  "python",
+  "load_hira.py"
+ ],
+ "zz-landchar6-bg": [
+  "python",
+  "load_land_char.py",
+  "--skip-loaded",
+  "--workers",
+  "6"
+ ],
+ "plan-rest": [
+  "python",
+  "run_plan.py",
+  "plan",
+  "--ops",
+  "atch,basis,exar,expos,flr,hsprc,jijigu,pmsdong,recap,title"
+ ],
+ "go-rest": [
+  "python",
+  "run_plan.py",
+  "go",
+  "--ops",
+  "atch,basis,exar,expos,flr,hsprc,jijigu,pmsdong,recap,title",
+  "--retry",
+  "--workers",
+  "6"
+ ],
+ "zz-landchar3-bg": [
+  "python",
+  "load_land_char.py",
+  "--skip-loaded",
+  "--workers",
+  "3"
+ ],
+ "hira-open": [
+  "python",
+  "load_hira_open.py"
+ ],
+ "applyhome-all": [
+  "python",
+  "load_applyhome.py"
+ ],
+ "applyhome-cmpet": [
+  "python",
+  "load_applyhome_cmpet.py"
+ ],
+ "childcare": [
+  "python",
+  "load_childcare.py"
+ ],
+ "closed-bld": [
+  "python",
+  "load_closed_bld.py",
+  "--sgg",
+  "11290",
+  "11380"
+ ]
 }
