@@ -250,5 +250,9 @@
   "--sgg",
   "11290",
   "11380"
+ ],
+ "seoul-redev-plan": [
+  "python",
+  "load_seoul_redev_plan.py"
  ]
 }
