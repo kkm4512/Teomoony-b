@@ -43,7 +43,7 @@ def pnu_all(p):
         last = None
         for t in range(6):
             try:
-                j = json.loads(urllib.request.urlopen(N.URL + "?" + q(**k), timeout=90).read().decode("utf-8", "replace"))
+                j = json.loads(urllib.request.urlopen(N.URL + "?" + q(**k), timeout=90).read().decode("utf-8", "replace"), strict=False)   # 원문에 제어문자가 섞인 필지가 있다(2026-10-22, 3건) — 글자는 그대로 둔다
                 a = j.get("apartHousingPrices")
                 if not a:
                     if str((j.get("response") or {}).get("totalCount", "")) == "0": return 0, []
