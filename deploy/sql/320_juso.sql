@@ -54,6 +54,13 @@ SELECT DISTINCT keyword = CAST(LTRIM(RTRIM(LEFT(k.doro_juso, PATINDEX('%[0-9] %'
   FROM silver.kapt_complex k
  WHERE k.is_current = 1 AND k.doro_juso LIKE N'%[0-9]%' AND (k.bjd_code LIKE '11%' OR k.bjd_code LIKE '4117%');
 GO
+/* 2026-10-23: 지도에 자리가 없는 폐쇄 대장(서울·안양)의 도로명주소 — 괄호 앞까지 */
+CREATE OR ALTER VIEW gold.v_juso_ask_closed
+AS
+SELECT DISTINCT keyword = CAST(LTRIM(RTRIM(LEFT(s.new_plat_plc, CHARINDEX(N' (', s.new_plat_plc + N' (') - 1))) AS NVARCHAR(300))
+  FROM gold.closed_site s
+ WHERE s.lat IS NULL AND s.new_plat_plc LIKE N'%[0-9]%' AND (s.pnu LIKE '11%' OR s.pnu LIKE '4117%');
+GO
 /* 도로명 마스터에 받은 도로 넣기 — 받은 뒤 부른다 */
 CREATE OR ALTER PROCEDURE meta.usp_road_code_from_juso
 AS

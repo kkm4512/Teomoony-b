@@ -335,5 +335,19 @@
   "load_juso.py",
   "--what",
   "kapt"
+ ],
+ "juso-closed": [
+  "python",
+  "load_juso.py",
+  "--what",
+  "closed"
+ ],
+ "juso-closed-hist-probe": [
+  "python",
+  "load_juso.py",
+  "--what",
+  "closed",
+  "--hist-probe",
+  "200"
  ]
 }

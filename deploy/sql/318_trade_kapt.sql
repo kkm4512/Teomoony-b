@@ -1,5 +1,5 @@
 /* ============================================================
-   318_trade_kapt : 단지에 안 붙은 아파트 실거래 → **K-apt 지번**으로 그 단지에 (2026-10-23 새벽, 사장님 "확실한건만 매칭 기준을 정리해")
+   318_trade_kapt : 단지에 안 붙은 아파트 실거래 → **K-apt 지번** · **도로명코드(마스터 방식)** 로 그 단지에 (2026-10-23 새벽, 사장님 "확실한건만 매칭 기준을 정리해")
    ★ 왜(실측, 서울): 필지는 찾았는데 단지가 없는 아파트·연립·오피스텔 거래 18.3만. 그중 새 단지 거래가 상당수다 —
      정비사업·택지 단지는 이전고시·지번 정리 전까지 실거래가 **사업 전 지번**(메이플자이 '잠원동 60-3' · 강동리버스트4단지 '강일동 114')으로
      신고되는데, 대장은 새 지번(잠원동 167 · 강일동 742)이라 지번으로 안 만난다. 도로명도 옛 것(잠원로4길 50)이라 도로명으로도 안 만난다.
@@ -43,7 +43,7 @@ BEGIN
      WHERE t.match_complex_id IS NULL AND t.trade_kind LIKE 'APT%' AND t.trade_kind NOT LIKE 'SILV%' AND t.apt_seq IS NOT NULL;
     /* aptSeq 단위로 가장 이른 계약 */
     IF OBJECT_ID('tempdb..#f') IS NOT NULL DROP TABLE #f;
-    SELECT t.trade_sk, t.complex_id
+    SELECT t.trade_sk, t.complex_id, 길 = CAST(N'K-apt 지번' AS NVARCHAR(20))
       INTO #f
       FROM #t t
       JOIN (SELECT apt_seq, match_pnu, 처음 = MIN(deal_ymd) FROM silver.rtms_trade
@@ -52,10 +52,43 @@ BEGIN
      WHERE g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -1, TRY_CONVERT(DATE, t.준공)), 112);
        /* (첫 판에는 '폐쇄 대장이 있으면 닫힌 날 이후만' 도 걸었다 — 택지의 옛 비주거 대장이 새 단지 입주 뒤에 닫힌 곳(강동리엔파크11단지)까지 막아서 뺐다.
           옛 아파트 거래는 aptSeq 의 첫 계약이 사용승인 1년 전보다 훨씬 이르므로 위 조건 하나로 걸러진다 — 헐고 새로 짓는 데 1년 안에 끝나는 곳은 없다.) */
+
+    /* ② 2026-10-23 사장님 "법정동 도로명 모두 마스터와 같은 방식" — 실거래의 **도로명코드 + 건물본번 + 부번** = 대장 동의 [na_road_cd + na_main_bun + na_sub_bun](지상)
+         · 그 주소의 세대 단지가 하나 · 옛 건물 거래 아님(그 지번 폐쇄 대장이 닫히기 전 계약이 아님) · 같은 aptSeq·같은 도로명주소의 첫 계약이 사용승인 1년 전 이후
+         (옛 건물이 같은 건물번호를 물려준 곳 — 가락시영 '송파대로 345' = 헬리오시티 — 을 막는다) */
+    IF OBJECT_ID('tempdb..#rb') IS NOT NULL DROP TABLE #rb;
+    SELECT b.na_road_cd, bm = TRY_CAST(b.na_main_bun AS INT), bs = ISNULL(TRY_CAST(b.na_sub_bun AS INT), 0),
+           complex_id = MIN(cb.complex_id), 준공 = MIN(c.oldest_use_apr)
+      INTO #rb
+      FROM silver.bld_title b JOIN gold.complex_bld cb ON cb.mgm_bldrgst_pk = b.mgm_bldrgst_pk
+      JOIN gold.complex c ON c.complex_id = cb.complex_id AND c.is_active = 1 AND c.merged_into IS NULL AND c.hhld_cnt_sum > 0 AND LEN(c.oldest_use_apr) = 8
+     WHERE b.is_current = 1 AND b.na_road_cd IS NOT NULL AND ISNULL(b.na_ugrnd_cd, '0') = '0' AND TRY_CAST(b.na_main_bun AS INT) > 0
+     GROUP BY b.na_road_cd, TRY_CAST(b.na_main_bun AS INT), ISNULL(TRY_CAST(b.na_sub_bun AS INT), 0)
+    HAVING COUNT(DISTINCT cb.complex_id) = 1;
+    CREATE CLUSTERED INDEX x ON #rb (na_road_cd, bm, bs);
+    IF OBJECT_ID('tempdb..#rt') IS NOT NULL DROP TABLE #rt;
+    SELECT t.trade_sk, t.apt_seq, t.road_cd, rb = TRY_CAST(t.road_bonbun AS INT), rs = ISNULL(TRY_CAST(t.road_bubun AS INT), 0), t.deal_ymd, r.complex_id, r.준공
+      INTO #rt
+      FROM silver.rtms_trade t
+      JOIN #rb r ON r.na_road_cd = t.road_cd AND r.bm = TRY_CAST(t.road_bonbun AS INT) AND r.bs = ISNULL(TRY_CAST(t.road_bubun AS INT), 0)
+     WHERE t.match_complex_id IS NULL AND t.trade_kind LIKE 'APT%' AND t.apt_seq IS NOT NULL AND t.road_cd IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM #f f WHERE f.trade_sk = t.trade_sk)
+       AND NOT EXISTS (SELECT 1 FROM gold.closed_site s WHERE s.pnu = t.match_pnu AND LEN(s.shter_day) = 8 AND t.deal_ymd <= s.shter_day);
+    INSERT INTO #f (trade_sk, complex_id, 길)
+    SELECT t.trade_sk, t.complex_id, N'도로명코드'
+      FROM #rt t
+      JOIN (SELECT apt_seq, road_cd, rb, rs, 처음 = MIN(deal_ymd) FROM #rt GROUP BY apt_seq, road_cd, rb, rs) g
+        ON g.apt_seq = t.apt_seq AND g.road_cd = t.road_cd AND g.rb = t.rb AND g.rs = t.rs
+     WHERE g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -1, TRY_CONVERT(DATE, t.준공)), 112);
+
     SET @n = (SELECT COUNT(*) FROM #f);
     IF @dry = 1
     BEGIN
         SELECT 붙을 = @n, 단지 = (SELECT COUNT(DISTINCT complex_id) FROM #f), 후보 = (SELECT COUNT(*) FROM #t),
+               길별 = (SELECT 길, n = COUNT(*), 단지 = COUNT(DISTINCT complex_id) FROM #f GROUP BY 길 FOR JSON PATH),
+               도로예 = (SELECT TOP 25 c.complex_nm, 실거래이름 = MAX(t.bld_nm), n = COUNT(*), 처음 = MIN(t.deal_ymd), 준공 = MIN(c.oldest_use_apr)
+                       FROM #f f JOIN gold.complex c ON c.complex_id = f.complex_id JOIN silver.rtms_trade t ON t.trade_sk = f.trade_sk
+                      WHERE f.길 = N'도로명코드' GROUP BY c.complex_nm ORDER BY n DESC FOR JSON PATH),
                예 = (SELECT TOP 20 c.complex_nm, 실거래이름 = MAX(t.bld_nm), n = COUNT(*), 처음 = MIN(t.deal_ymd), 준공 = MIN(c.oldest_use_apr)
                        FROM #f f JOIN gold.complex c ON c.complex_id = f.complex_id JOIN silver.rtms_trade t ON t.trade_sk = f.trade_sk
                       GROUP BY c.complex_nm ORDER BY n DESC FOR JSON PATH),

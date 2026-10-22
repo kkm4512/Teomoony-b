@@ -26,7 +26,8 @@ def env():
 
 
 E = env(); KEY = E.get("JUSO_KEY", "").strip()
-ASK = {"kapt": "SELECT keyword FROM gold.v_juso_ask_kapt v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)"}
+ASK = {"kapt": "SELECT keyword FROM gold.v_juso_ask_kapt v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)",
+       "closed": "SELECT keyword FROM gold.v_juso_ask_closed v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)"}
 STOP = {"E0001", "E0014", "E0015", "-999"}      # 키 오류 · 한도 · 시스템 — 멈춘다
 
 
@@ -36,8 +37,13 @@ def connect():
                            password=E.get("DB_PASSWORD", ""), database=E.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
 
 
+HIST = False
+
+
 def fetch(kw):
-    q = urllib.parse.urlencode({"confmKey": KEY, "currentPage": "1", "countPerPage": "20", "keyword": kw, "resultType": "json"})
+    p = {"confmKey": KEY, "currentPage": "1", "countPerPage": "20", "keyword": kw, "resultType": "json"}
+    if HIST: p["hstryYn"] = "Y"                     # 변동된 주소(폐지 포함)까지
+    q = urllib.parse.urlencode(p)
     last = None
     for t in range(4):
         try:
@@ -81,7 +87,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--what", default="kapt", choices=sorted(ASK)); ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--hist-probe", type=int, default=0, help="0건이던 말 N개를 hstryYn=Y 로 다시 물어 건수만 센다(DB 에 안 씀)")
     a = ap.parse_args()
+    global HIST
+    if a.hist_probe:
+        HIST = True
+        conn = connect(); cur = conn.cursor()
+        cur.execute(f"SELECT TOP {int(a.hist_probe)} keyword FROM silver.juso_lookup WHERE 출처 = %s AND total_count = 0 ORDER BY NEWID()", (a.what.upper(),))
+        ks = [r[0] for r in cur.fetchall()]; 셈 = {"0건": 0, "1건": 0, "여럿": 0, "정확": 0}
+        for k in ks:
+            raw, j = fetch(k); rows = (j.get("results") or {}).get("juso") or []
+            셈["0건" if not rows else "1건" if len(rows) == 1 else "여럿"] += 1
+            num = k.rsplit(" ", 1)[-1]; road = k.rsplit(" ", 1)[0].rsplit(" ", 1)[-1]
+            본, _, 부 = num.partition("-")
+            if any(x.get("rn") == road and str(x.get("buldMnnm")) == 본 and str(x.get("buldSlno") or "0") == (부 or "0") for x in rows): 셈["정확"] += 1
+        print(f"[hist-probe {a.what}] {len(ks)}개 다시 물음(hstryYn=Y) · {셈}", flush=True); return
     if not KEY: sys.exit(".env 의 JUSO_KEY 가 비어 있습니다")
     conn = connect(); cur = conn.cursor()
     cur.execute(ASK[a.what]); todo = [r[0] for r in cur.fetchall() if r[0]]

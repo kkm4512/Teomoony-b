@@ -6,6 +6,7 @@
        ① 토지이동이력의 마지막 줄이 'N번과 합병되어 말소' 이고 그 N 필지가 지금 있다 → N 필지 중심(옛 땅은 N 안에 들어갔다)
        ② 대장 도로명주소(괄호 앞) = 지금 건물 대장의 도로명주소 · 그 주소의 지금 단지가 하나 → 그 단지 중심
           ★ 자리만 쓴다 — '지금 그 자리 단지'(now_complex_id)로는 안 쓴다. 둔촌주공 '양재대로 1340' 은 지금 둔촌파출소 주소다(뒤를 이은 단지가 아니다).
+       ③ (2026-10-23) 대장 도로명주소 → 행정안전부 주소 검색(320) → 정확히 같은 도로명·번호의 공식 지번 필지 중심
    ★ 302 의 usp_build_closed_site 가 끝에 부른다(다시 만들면 다시 찍는다).
    ============================================================ */
 SET QUOTED_IDENTIFIER ON;
@@ -60,6 +61,15 @@ BEGIN
           JOIN gold.complex c ON c.complex_id = h.cid AND c.centroid_lat IS NOT NULL
          WHERE s.lat IS NULL;
     END
+    /* ③ 2026-10-23 (320 · 마스터 방식): 대장 도로명주소를 행정안전부 주소 검색에 물어 **정확히 같은 도로명·번호 하나** 가 나오면 그 공식 지번 필지 중심 */
+    IF OBJECT_ID('gold.v_juso_exact') IS NOT NULL
+        UPDATE s SET lat = p.centroid_lat, lng = p.centroid_lng,
+                     위치근거 = LEFT(N'도로명주소의 공식 지번 필지 중심 — 행정안전부 주소(' + e.keyword + N')', 80)
+          FROM gold.closed_site s
+          JOIN gold.v_juso_exact e ON e.keyword = CAST(LTRIM(RTRIM(LEFT(s.new_plat_plc, CHARINDEX(N' (', s.new_plat_plc + N' (') - 1))) AS NVARCHAR(300))
+          JOIN silver.cadastral_parcel p ON p.pnu = e.pnu AND p.is_current = 1 AND p.centroid_lat IS NOT NULL
+         WHERE s.lat IS NULL AND s.new_plat_plc LIKE N'%[0-9]%' AND (@sgg IS NULL OR LEFT(s.pnu, 5) = @sgg);
+
     SELECT 위치근거 = LEFT(ISNULL(위치근거, N'(없음)'), 5), n = COUNT(*) FROM gold.closed_site
      WHERE @sgg IS NULL OR LEFT(pnu, 5) = @sgg GROUP BY LEFT(ISNULL(위치근거, N'(없음)'), 5);
 END
