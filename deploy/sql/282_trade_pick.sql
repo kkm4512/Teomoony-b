@@ -119,7 +119,11 @@ BEGIN
         SET @lo = @hi;
     END
 
+    /* 318 (2026-10-23): 필지로 못 붙은 아파트 거래 → K-apt 지번(사업 전 지번)으로. 결과 행을 안 내보낸다 — 아래 한 행만 나간다(load_rtms.py) */
+    DECLARE @kapt INT = 0;
+    IF OBJECT_ID('gold.usp_match_trade_kapt') IS NOT NULL EXEC gold.usp_match_trade_kapt @dry = 0, @n = @kapt OUTPUT;
+
     SELECT 회차 = @run, 바꿈 = @n - @새로, 새로붙음 = @새로,
-           여럿필지단지 = (SELECT COUNT(*) FROM #c), 초 = DATEDIFF(SECOND, @t0, SYSDATETIME());
+           여럿필지단지 = (SELECT COUNT(*) FROM #c), 초 = DATEDIFF(SECOND, @t0, SYSDATETIME()), K_apt지번 = @kapt;
 END
 GO

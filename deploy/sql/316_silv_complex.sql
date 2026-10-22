@@ -8,6 +8,7 @@
         ★ 2026-10-23 사장님 "국가에서 입주권 분양권으로 거래한거면 그냥 그대로 내보내" — 정비사업은 준공·입주 뒤에도 이전고시·보존등기 전까지
           입주권·분양권으로 신고된다(공덕자이·헬리오시티). 준공 뒤 10년으로 끊는 까닭: 오래된 단지가 재건축에 들어가 같은 필지에서
           **새 사업의** 입주권이 거래될 때 옛 단지에 붙지 않게(그건 폐쇄 대장 자리 · 정비구역 상세에서 보인다).
+     ③ K-apt 지번 — 이 단지에 이어진 K-apt 의 지번(사업 전 지번 그대로인 곳이 많다) · 그 지번의 K-apt 가 이 단지만 · 준공 앞뒤 10년 (2026-10-23)
    ★ silver.rtms_trade.match_complex_id 에는 넣지 않는다 — 최고가(288) · 평당 · 전세가율 · AI 검색 · 지역 순위에 분양가가 섞이지 않게. 목록에만.
    ============================================================ */
 SET QUOTED_IDENTIFIER ON;
@@ -41,8 +42,24 @@ b AS (
                         WHERE cp2.pnu = t.match_pnu AND c2.complex_id <> @cid AND c2.hhld_cnt_sum > 0
                           AND LEN(c2.oldest_use_apr) = 8
                           AND c2.oldest_use_apr >= CONVERT(CHAR(8), DATEADD(YEAR, -10, TRY_CONVERT(DATE, t.deal_ymd)), 112)))
+,
+/* ③ 2026-10-23 (318 과 같은 다리): 이 단지에 이어진 K-apt 의 지번(= 사업 전 지번) · 그 지번의 K-apt 가 이 단지만 가리킬 때 · 준공 앞뒤 10년 */
+kp AS (SELECT k.pnu FROM gold.complex_kapt ck JOIN silver.kapt_complex k ON k.kapt_code = ck.kapt_code AND k.is_current = 1
+        WHERE ck.complex_id = @cid AND k.pnu IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM silver.kapt_complex k2 JOIN gold.complex_kapt ck2 ON ck2.kapt_code = k2.kapt_code
+                           WHERE k2.is_current = 1 AND k2.pnu = k.pnu AND ck2.complex_id <> @cid)
+          AND NOT EXISTS (SELECT 1 FROM gold.complex_pnu cp JOIN gold.complex c3 ON c3.complex_id = cp.complex_id AND c3.is_active = 1 AND c3.hhld_cnt_sum > 0
+                           WHERE cp.pnu = k.pnu AND cp.complex_id <> @cid)),
+d AS (
+    SELECT t.trade_sk, 근거 = CAST(N'K-apt 지번' AS NVARCHAR(30))
+      FROM silver.rtms_trade t CROSS JOIN c
+     WHERE c.준공 IS NOT NULL AND t.trade_kind LIKE 'SILV%' AND t.match_pnu IN (SELECT pnu FROM kp)
+       AND t.deal_ymd >= CONVERT(CHAR(8), DATEADD(YEAR, -10, TRY_CONVERT(DATE, c.준공)), 112)
+       AND t.deal_ymd <= CONVERT(CHAR(8), DATEADD(YEAR, 10, TRY_CONVERT(DATE, c.준공)), 112))
 SELECT trade_sk, 근거 FROM a
 UNION ALL
-SELECT b.trade_sk, b.근거 FROM b WHERE NOT EXISTS (SELECT 1 FROM a WHERE a.trade_sk = b.trade_sk);
+SELECT b.trade_sk, b.근거 FROM b WHERE NOT EXISTS (SELECT 1 FROM a WHERE a.trade_sk = b.trade_sk)
+UNION ALL
+SELECT d.trade_sk, d.근거 FROM d WHERE NOT EXISTS (SELECT 1 FROM a WHERE a.trade_sk = d.trade_sk) AND NOT EXISTS (SELECT 1 FROM b WHERE b.trade_sk = d.trade_sk);
 GO
 SELECT n = COUNT(*) FROM gold.fn_complex_silv(545277);
