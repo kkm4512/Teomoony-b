@@ -10186,3 +10186,10 @@ v_lawd_map 3개 동         5,568ms → 37ms
 - 고르는 법: 그 지정이 걸린 이 단지 필지(land_use_plan 같은 코드) 중심점 POINT → 안 나오면 그 필지 BOX. **이름이 원문과 같은 것만**(공백 무시). 못 찾으면 '못 찾음'.
 - /api/complexes/:id/landuse-shape?code=&nm= · 화면: 토지 탭 토지이용계획 줄과 '토지거래허가구역' 상자를 누르면 보라 점선으로 그림(정비구역과 같은 토글, 한 번에 하나).
 - 확인(69657 래미안길음센터피스): 제3종일반주거 1 · 토지거래허가 2(2025·2026 고시) · 상대보호 3 · 절대보호 4 · 경관녹지 4 · 공원 2. 응답 65~185ms.
+
+### 11-187 VWorld 구역 경계 미리 받기 (2026-10-22 11:08, 사장님 "미리 받아올순없어?")
+- **304** silver.vworld_zone(레이어 + 속성 + 좌표 sha256 = zone_key, geom MakeValid, 공간색인) · silver.vworld_zone_done(시군구×레이어, 실패 조각 0 일 때만 '다 받음').
+  적재기 etl/load_vworld_zone.py — 시군구 필지 bbox 를 8km² 조각(split_box)으로, 10개 레이어. 작업 줄 'vworld-zone'(--skip-done). 못 본 것은 닫지 않음.
+  범위 33 시군구(필지가 있는 곳 전부) × 10 레이어. 11:10 시작.
+- /landuse-shape: 그 필지 시군구·레이어가 다 받은 곳이면 **DB 만**(필지 geom 과 STIntersects + 이름 같음), 아니면 VWorld 를 그때. 응답에 출처(미리 받음/VWorld 바로)·받은시각.
+- silver.land_use_zone(154, 용도 겹쳐보기)은 그대로 — 섞지 않음.

@@ -254,5 +254,10 @@
  "seoul-redev-plan": [
   "python",
   "load_seoul_redev_plan.py"
+ ],
+ "vworld-zone": [
+  "python",
+  "load_vworld_zone.py",
+  "--skip-done"
  ]
 }
