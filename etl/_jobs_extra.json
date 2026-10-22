@@ -290,10 +290,22 @@
   "python",
   "load_land_move.py",
   "--workers",
-  "4"
+  "4",
+  "--max-min",
+  "180"
  ],
  "a-exar-anyang": [
   "python",
   "run_exar_anyang.py"
+ ],
+ "b-ned-aphus": [
+  "python",
+  "load_ned_aphus.py",
+  "--workers",
+  "4"
+ ],
+ "a2-mois-pharmacy": [
+  "python",
+  "load_mois_pharmacy.py"
  ]
 }
