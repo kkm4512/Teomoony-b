@@ -151,6 +151,20 @@ BEGIN
           FROM #k k
          WHERE NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = k.house_manage_no AND l.pblanc_no = k.pblanc_no)
          GROUP BY k.house_manage_no, k.pblanc_no HAVING COUNT(DISTINCT k.kapt_code) = 1;
+        /* 2026-10-22 23:31 사장님 "매칭 #3": 공고 지번이 **그대로 단지의 필지**이고 그 단지가 **공고 뒤에 준공**(사용승인 ≥ 모집공고일)된
+           세대 단지가 딱 하나면 그 단지 — 거리·입주월 창이 필요 없다(지번이 같다). 철거 전 옛 단지는 '공고 뒤 준공' 이 아니라 끼어들 수 없다.
+           실측: 전국 89건 중 64건은 위 두 길과 **같은 단지**(다른 단지 0) · 25건이 새로 이어짐(마곡 엠밸리 9단지 · 원에디션 강남 · 에비뉴 청계 Ⅰ·Ⅱ …).
+           ★ 법정동·입주월·세대만으로 하나인 후보(거리 없이)는 쓰지 않는다 — 이 길과 겹친 8건 중 7건이 **다른 단지**였다. */
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT p.house_manage_no, p.pblanc_no, MIN(c.complex_id),
+               (SELECT TOP 1 ck.kapt_code FROM gold.complex_kapt ck WHERE ck.complex_id = MIN(c.complex_id)),
+               N'공고 지번 = 단지 필지 · 공고 뒤 준공 — 대장 후보 1', 0
+          FROM silver.applyhome_pblanc p
+          JOIN gold.complex_pnu cp ON cp.pnu = p.pnu
+          JOIN gold.complex c ON c.complex_id = cp.complex_id AND c.is_active = 1 AND c.merged_into IS NULL AND c.hhld_cnt_sum > 0
+         WHERE LEN(c.oldest_use_apr) = 8 AND c.oldest_use_apr >= REPLACE(p.rcrit_pblanc_de, '-', '')
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
+         GROUP BY p.house_manage_no, p.pblanc_no HAVING COUNT(DISTINCT c.complex_id) = 1;
     COMMIT;
 
     SELECT 공고 = (SELECT COUNT(*) FROM silver.applyhome_pblanc),
