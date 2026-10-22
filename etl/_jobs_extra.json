@@ -321,5 +321,19 @@
   "load_ned_aphus.py",
   "--workers",
   "4"
+ ],
+ "juso-kapt-test": [
+  "python",
+  "load_juso.py",
+  "--what",
+  "kapt",
+  "--limit",
+  "20"
+ ],
+ "juso-kapt": [
+  "python",
+  "load_juso.py",
+  "--what",
+  "kapt"
  ]
 }
