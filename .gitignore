@@ -35,3 +35,9 @@ deploy/sql/_버림_*
 
 # 행안부 약국 원문 쪽(받은 그대로 · 다시 받을 수 있음)
 etl/_mois_raw/
+etl/_ned_raw/
+etl/_export/
+etl/_master_raw/
+deploy/sql/t308_link_*.sql
+deploy/sql/tned_*.sql
+deploy/sql/_버림_*
