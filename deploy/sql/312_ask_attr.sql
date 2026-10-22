@@ -89,8 +89,9 @@ BEGIN
            호마다 찾아가면(APPLY) 5,000단지에 무작위 읽기 수십만 번이라 60초를 넘겼다 — 적재가 디스크를 쓰는 중이면 더. */
         IF OBJECT_ID('tempdb..#h') IS NOT NULL DROP TABLE #h;
         SELECT DISTINCT h.complex_id, h.호PK INTO #h FROM gold.v_complex_ho h WHERE h.complex_id BETWEEN @a AND @b;
-        DELETE FROM gold.complex_area WHERE complex_id BETWEEN @a AND @b;
-        INSERT INTO gold.complex_area (complex_id, 전용, 호수)
+        IF OBJECT_ID('tempdb..#ra') IS NOT NULL DROP TABLE #ra;
+        SELECT TOP 0 complex_id, 전용, 호수 INTO #ra FROM gold.complex_area;
+        INSERT INTO #ra (complex_id, 전용, 호수)
         SELECT h.complex_id, x.전용, COUNT(*)
           FROM #h h
           JOIN (SELECT a.mgm_bldrgst_pk,
@@ -102,12 +103,18 @@ BEGIN
          WHERE x.주거 = 1 AND x.전용 > 0
          GROUP BY h.complex_id, x.전용
         OPTION (HASH JOIN);
+        /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
+        BEGIN TRAN;
+            DELETE FROM gold.complex_area WHERE complex_id BETWEEN @a AND @b;
+            INSERT INTO gold.complex_area (complex_id, 전용, 호수) SELECT complex_id, 전용, 호수 FROM #ra;
+        COMMIT;
     END
 
     IF @what = 'atrade'
     BEGIN
-        DELETE FROM gold.complex_area_trade WHERE complex_id BETWEEN @a AND @b;
-        INSERT INTO gold.complex_area_trade (종류, complex_id, 전용, max_amt, n)
+        IF OBJECT_ID('tempdb..#rt') IS NOT NULL DROP TABLE #rt;
+        SELECT TOP 0 종류, complex_id, 전용, max_amt, n INTO #rt FROM gold.complex_area_trade;
+        INSERT INTO #rt (종류, complex_id, 전용, max_amt, n)
         SELECT g.종류, r.match_complex_id, CAST(r.exclu_use_ar AS DECIMAL(9,2)), MAX(r.deal_amount), COUNT(*)
           FROM silver.rtms_trade r
          CROSS APPLY (SELECT 'ALL' UNION ALL
@@ -117,6 +124,11 @@ BEGIN
          WHERE r.match_complex_id BETWEEN @a AND @b AND r.is_rent = 0 AND r.is_canceled = 0
            AND r.deal_amount IS NOT NULL AND r.exclu_use_ar > 0 AND g.종류 IS NOT NULL
          GROUP BY g.종류, r.match_complex_id, CAST(r.exclu_use_ar AS DECIMAL(9,2));
+        /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
+        BEGIN TRAN;
+            DELETE FROM gold.complex_area_trade WHERE complex_id BETWEEN @a AND @b;
+            INSERT INTO gold.complex_area_trade (종류, complex_id, 전용, max_amt, n) SELECT 종류, complex_id, 전용, max_amt, n FROM #rt;
+        COMMIT;
     END
 
     IF @what IN ('station', 'school')
@@ -135,8 +147,9 @@ BEGIN
 
         IF @what = 'station'
         BEGIN
-            DELETE FROM gold.complex_station WHERE complex_id BETWEEN @a AND @b;
-            INSERT INTO gold.complex_station (complex_id, sttn_nm, line_nm, dist_m)
+            IF OBJECT_ID('tempdb..#rs') IS NOT NULL DROP TABLE #rs;
+            SELECT TOP 0 complex_id, sttn_nm, line_nm, dist_m INTO #rs FROM gold.complex_station;
+            INSERT INTO #rs (complex_id, sttn_nm, line_nm, dist_m)
             SELECT c.complex_id, s.sttn_nm, s.line_nm, d.dist_m
               FROM #c c
               JOIN (SELECT sttn_nm, line_nm, geog,
@@ -145,11 +158,17 @@ BEGIN
                 ON s.gy = c.gy AND s.gx = c.gx
              CROSS APPLY (SELECT dist_m = s.geog.STDistance(geography::Point(c.centroid_lat, c.centroid_lng, 4326))) d
              WHERE d.dist_m <= 1500;
+            /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
+            BEGIN TRAN;
+                DELETE FROM gold.complex_station WHERE complex_id BETWEEN @a AND @b;
+                INSERT INTO gold.complex_station (complex_id, sttn_nm, line_nm, dist_m) SELECT complex_id, sttn_nm, line_nm, dist_m FROM #rs;
+            COMMIT;
         END
         ELSE
         BEGIN
-            DELETE FROM gold.complex_school_near WHERE complex_id BETWEEN @a AND @b;
-            INSERT INTO gold.complex_school_near (complex_id, school_se, school_nm, dist_m)
+            IF OBJECT_ID('tempdb..#rk') IS NOT NULL DROP TABLE #rk;
+            SELECT TOP 0 complex_id, school_se, school_nm, dist_m INTO #rk FROM gold.complex_school_near;
+            INSERT INTO #rk (complex_id, school_se, school_nm, dist_m)
             SELECT complex_id, school_se, school_nm, dist_m
               FROM (SELECT c.complex_id, s.school_se, s.school_nm, d.dist_m,
                            rn = ROW_NUMBER() OVER (PARTITION BY c.complex_id, s.school_se ORDER BY d.dist_m, s.school_nm)
@@ -162,13 +181,19 @@ BEGIN
                      CROSS APPLY (SELECT dist_m = s.geog.STDistance(geography::Point(c.centroid_lat, c.centroid_lng, 4326))) d
                      WHERE d.dist_m <= 2000) x
              WHERE rn = 1;
+            /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
+            BEGIN TRAN;
+                DELETE FROM gold.complex_school_near WHERE complex_id BETWEEN @a AND @b;
+                INSERT INTO gold.complex_school_near (complex_id, school_se, school_nm, dist_m) SELECT complex_id, school_se, school_nm, dist_m FROM #rk;
+            COMMIT;
         END
     END
 
     IF @what = 'redev'
     BEGIN
-        DELETE FROM gold.complex_redev_hit WHERE complex_id BETWEEN @a AND @b;
-        INSERT INTO gold.complex_redev_hit (complex_id, present_sn, xarea, parea)
+        IF OBJECT_ID('tempdb..#rr') IS NOT NULL DROP TABLE #rr;
+        SELECT TOP 0 complex_id, present_sn, xarea, parea INTO #rr FROM gold.complex_redev_hit;
+        INSERT INTO #rr (complex_id, present_sn, xarea, parea)
         SELECT cp.complex_id, r.present_sn,
                SUM(p.geom.STIntersection(r.geom).STArea()), SUM(p.geom.STArea())
           FROM gold.complex_pnu cp
@@ -181,12 +206,18 @@ BEGIN
            AND r.geom.STIntersects(p.geom) = 1
          WHERE cp.complex_id BETWEEN @a AND @b
          GROUP BY cp.complex_id, r.present_sn;
+        /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
+        BEGIN TRAN;
+            DELETE FROM gold.complex_redev_hit WHERE complex_id BETWEEN @a AND @b;
+            INSERT INTO gold.complex_redev_hit (complex_id, present_sn, xarea, parea) SELECT complex_id, present_sn, xarea, parea FROM #rr;
+        COMMIT;
     END
 
     IF @what = 'zone'
     BEGIN
-        DELETE FROM gold.complex_zone_hit WHERE complex_id BETWEEN @a AND @b;
-        INSERT INTO gold.complex_zone_hit (complex_id, uname, xarea)
+        IF OBJECT_ID('tempdb..#rz') IS NOT NULL DROP TABLE #rz;
+        SELECT TOP 0 complex_id, uname, xarea INTO #rz FROM gold.complex_zone_hit;
+        INSERT INTO #rz (complex_id, uname, xarea)
         SELECT cp.complex_id, z.uname, SUM(p.geom.STIntersection(z.geom).STArea())
           FROM gold.complex_pnu cp
           JOIN silver.cadastral_parcel p
@@ -199,6 +230,11 @@ BEGIN
            AND z.geom.STIntersects(p.geom) = 1
          WHERE cp.complex_id BETWEEN @a AND @b
          GROUP BY cp.complex_id, z.uname;
+        /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
+        BEGIN TRAN;
+            DELETE FROM gold.complex_zone_hit WHERE complex_id BETWEEN @a AND @b;
+            INSERT INTO gold.complex_zone_hit (complex_id, uname, xarea) SELECT complex_id, uname, xarea FROM #rz;
+        COMMIT;
     END
 
     DECLARE @표 VARCHAR(20) = CASE @what WHEN 'area' THEN 'complex_area' WHEN 'atrade' THEN 'complex_area_trade'

@@ -301,6 +301,10 @@ JOBS = {
     # SHP 는 받을 때 4326 ndjson 으로 바꿔서 data/ 에 넣는다(README).
     "school-zone":   [sys.executable, "load_school_zone.py"],
 
+    # ---- AI 검색 조건 요약표(312) 다시 세기 (2026-10-22) ----
+    # ★ 적재가 끝나면 handle() 이 **저절로** 뒷줄에 건다(요약다시). 손으로 떨궈도 된다. 약 20분.
+    "z-askattr-par":  ["__SQL__", os.path.join(SQLDIR, "314_ask_attr_refresh.sql"), "314_ask_attr_refresh"],
+
     # ---- 유치원 (2026-10-19) ----
     # ★ 유치원알리미 자체 도메인이다(data.go.kr 아님).
     #   basicInfo2.do 를 쓴다 - basicInfo.do 에는 **좌표가 없다**(실측).
@@ -427,6 +431,26 @@ def run_sql(path, arg, log):
          "-i", "/tmp/job.sql"],
         stdout=log, stderr=subprocess.STDOUT).returncode
 
+# ---- 적재 뒤 AI 검색 조건 요약표(312) 다시 세기 (2026-10-22 사장님 "적재 뒤에 저절로") ----
+# ★ 요약표는 단지 · 대장 면적 · 실거래 · 역 · 학교 · 정비 · 용도에서 센다. 그중 하나라도 새로 받으면 묵는다.
+#   그래서 **받는 작업**이 성공하면 병렬 줄(-par)에 z-askattr-par 를 한 번 건다 — 뒷줄은 긴 적재(landchar 31시간)가 잡고 있을 수 있고, 이 작업은 gold 파생표만 써서 다른 작업과 표가 안 겹친다. 이미 걸려 있거나 도는 중이면 또 걸지 않는다.
+# ★ 받는 작업만(시험 · 미리보기 · 화면 · 터널 · 계정은 아님). 이름으로 고른다 — 새 적재 작업을 만들면 여기에도 넣는다.
+요약다시 = re.compile(r"^(go|go-retry|go-area|seoul-add|seoul-exar|probe-exar|pages|pages-20|pages-basis|chain-.+|"
+                      r"rtms-(seoul|anyang-m|anyang-d|seocho)|rtms-bg|rematch|gold-bg|building|cadastral|hsprc(-12)?|"
+                      r"subway|transit|school|redev|landuse|.*exar.*-par|.*-tradepick-bg|ab-.*-bg|sql\.(283|287)_.+)$")
+def 요약걸기(name):
+    if name == "z-askattr-par" or name.endswith("-dry") or name.endswith("-probe") or not 요약다시.match(name):
+        return
+    q = os.path.join(QDIR, "z-askattr-par.job")
+    if os.path.exists(q):
+        return                      # 이미 걸려 있다(도는 중이면 파일이 아직 큐에 있다)
+    try:
+        with open(q, "w", encoding="utf-8") as f:
+            f.write(f"{now()} {name} 뒤 — AI 검색 조건 요약표 다시 세기\n")
+        print(f"         → z-askattr-par 를 병렬 줄에 걸었다({name} 뒤)")
+    except Exception as e:
+        print(f"         (z-askattr-par 를 못 걸었다: {e})")
+
 def handle(path, quiet=False):
     """quiet=True 면 상태 파일을 쓰지 않는다 - 뒷줄(-bg) 작업용.
 
@@ -512,6 +536,8 @@ def handle(path, quiet=False):
         os.replace(path, os.path.join(DONE, f"{stamp}_{name}.job"))
     except Exception as e:
         print(f"         (큐에서 못 치웠다 — 다음 바퀴에 또 돕니다: {e})")
+    if rc == 0:
+        요약걸기(name)
     if not quiet:
         write_status(state="idle", last=name, result=f"rc={rc}",
                      sec=round(took, 1), log=os.path.basename(logpath),

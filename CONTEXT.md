@@ -10403,3 +10403,12 @@ v_lawd_map 3개 동         5,568ms → 37ms
   내 문의(답변 포함) · 내 AI 질문(누르면 다시 찾기) · 로그아웃. 단지 상세 이름 위 '☆ 관심'(로그인 안 했으면 내 정보로 안내). 문의 탭 '로그인하러 가기' → 내 정보.
 - ★ 같이 고친 것: **DB 시계가 UTC**(SYSDATETIME = SYSUTCDATETIME 실측)인데 문의 탭이 글자를 잘라 보여 18:54 답변이 09:54 로 보였다 → 화면에서 한국 시각으로(값은 그대로).
 - 별 누르기 · 알림 읽음은 실제 계정으로 아직 안 눌러 봄(시험 행 안 남기려고) — 읽기와 그림만 확인.
+
+### 11-210 AI 조건 요약표 저절로 다시 세기 · 미니 지도 오류 (2026-10-22 22:39 사장님 "ㄱㄱ")
+- **314_ask_attr_refresh.sql**(EXEC gold.usp_refresh_ask_attr, 약 20분) · 일꾼 JOBS `z-askattr-par`(병렬 줄 — gold 파생표만 써서 다른 작업과 표가 안 겹친다; 뒷줄은 landchar 가 31시간 잡고 있다).
+  handle() 이 **받는 작업이 성공하면** 저절로 z-askattr-par 를 건다(이름 정규식 요약다시 — go·seoul-add/exar·pages·chain·rtms·rematch·gold-bg·building·cadastral·hsprc·subway·transit·school·redev·landuse·*exar*-par·*-tradepick-bg·ab-*-bg·sql.283/287).
+  이미 큐에 있으면(도는 중 포함) 또 걸지 않는다. ★ **일꾼 재시작 뒤부터** 붙는다 — 지금 일꾼은 옛 코드(land-move · zz-landchar3-bg 가 끝난 뒤 restart.job).
+- 312 프로시저: 범위마다 #임시표에 다 센 뒤 **짧은 거래에서 바꿔 끼움**(DELETE+INSERT) — 다시 세는 동안 그 범위가 비어 AI 검색이 덜 찾는 일이 없게. 표본 범위 값 같음 확인.
+- 미니 지도 '_leaflet_pos' 오류(단지 열 때 2건 — 미니 지도 수): fitBounds 뒤 setZoom 이 줌 애니메이션을 걸어 두는데 상세가 다시 그려지며(renderShots → clearShots) 앞 지도를 remove → 애니메이션 끝에 지도가 없음.
+  미니 지도는 애니메이션 끔(zoom/fade/markerZoom) · 줌을 getBoundsZoom 으로 한 번에(전과 같은 값) · invalidateSize 는 아직 붙어 있을 때만. 5개 단지 열어 새 오류 0.
+- 정리: push_both.cmd · 시험 SQL(p_*) · .git 잠금/임시 파일 지움(사장님 허락).
