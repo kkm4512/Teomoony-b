@@ -112,7 +112,8 @@ BEGIN
        AND c.hhld_cnt_sum >= p.tot_suply AND LEFT(c.latest_use_apr, 6) BETWEEN p.ym0 AND p.ym1
        AND c.centroid_lat IS NOT NULL
      WHERE p.plat IS NOT NULL;
-    DELETE FROM #c WHERE m > 150;   /* 2026-10-21 22:30 500→150 (표본 41 중 190·342·364·403m 넷이 옆 단지였다) */
+    DELETE FROM #c WHERE m > 100;   /* 2026-10-21 22:30 500→150 (표본 41 중 190·342·364·403m 넷이 옆 단지였다)
+                                       2026-10-22 10:20 150→100 (도시형 넣고 보니 114m 상봉 유보라→와이센트럴 · 130m 힐스테이트청량리→롯데캐슬 Sky-L65 가 옆 단지. 맞은 것은 최대 79m) */
     /* 2026-10-21 밤: 공고 지번이 **이미 다른 단지의 필지**면 그 공고를 그 단지 아닌 곳에 잇지 않는다.
        '신성안양미소지움 공가세대(재건축매입 임대 공가)' 는 기존 아파트 주소라 입주월 창에 걸린 옆 신축(더베이타운 57m)에 붙었다. */
     DELETE c FROM #c c JOIN #p p ON p.house_manage_no = c.house_manage_no AND p.pblanc_no = c.pblanc_no
@@ -132,7 +133,7 @@ BEGIN
        AND LEFT(k.kapt_usedate, 6) BETWEEN p.ym0 AND p.ym1
       JOIN silver.cadastral_parcel kp ON kp.pnu = k.pnu AND kp.is_current = 1
      WHERE p.plat IS NOT NULL;
-    DELETE FROM #k WHERE m > 150;
+    DELETE FROM #k WHERE m > 100;
 
     BEGIN TRAN;
         DELETE FROM gold.applyhome_link;
@@ -140,13 +141,13 @@ BEGIN
         INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
         SELECT c.house_manage_no, c.pblanc_no, MIN(c.complex_id),
                (SELECT TOP 1 ck.kapt_code FROM gold.complex_kapt ck WHERE ck.complex_id = MIN(c.complex_id)),
-               N'법정동·입주월±4·세대·150m — 대장 후보 1', CAST(MIN(c.m) AS INT)
+               N'법정동·입주월±4·세대·100m — 대장 후보 1', CAST(MIN(c.m) AS INT)
           FROM #c c GROUP BY c.house_manage_no, c.pblanc_no HAVING COUNT(DISTINCT c.complex_id) = 1;
         /* 대장엔 없고 K-apt 후보가 정확히 하나 */
         INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
         SELECT k.house_manage_no, k.pblanc_no,
                (SELECT TOP 1 ck.complex_id FROM gold.complex_kapt ck WHERE ck.kapt_code = MIN(k.kapt_code)),
-               MIN(k.kapt_code), N'법정동·입주월±4·세대·150m — K-apt 후보 1', CAST(MIN(k.m) AS INT)
+               MIN(k.kapt_code), N'법정동·입주월±4·세대·100m — K-apt 후보 1', CAST(MIN(k.m) AS INT)
           FROM #k k
          WHERE NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = k.house_manage_no AND l.pblanc_no = k.pblanc_no)
          GROUP BY k.house_manage_no, k.pblanc_no HAVING COUNT(DISTINCT k.kapt_code) = 1;
