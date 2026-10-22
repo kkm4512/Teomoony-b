@@ -177,3 +177,12 @@ BEGIN
       FROM gold.closed_site WHERE @sgg IS NULL OR LEFT(pnu, 5) = @sgg;
 END
 GO
+
+/* 2026-10-22 13:07: 성북 1129011200 에서 numeric 넘침(8115) — 원문 건폐율·용적률에 큰 값이 온다(대장에 소수점이 빠진 듯한 값, 11-? 정릉동 59,315% 와 같은 종류).
+   원문 그대로 담도록 칸을 넓힌다(값을 고치거나 버리지 않는다). */
+ALTER TABLE silver.bld_closed_title ALTER COLUMN bc_rat DECIMAL(19,5) NULL;
+ALTER TABLE silver.bld_closed_title ALTER COLUMN vl_rat DECIMAL(19,5) NULL;
+ALTER TABLE silver.bld_closed_title ALTER COLUMN heit   DECIMAL(19,3) NULL;
+ALTER TABLE silver.bld_closed_recap ALTER COLUMN bc_rat DECIMAL(19,5) NULL;
+ALTER TABLE silver.bld_closed_recap ALTER COLUMN vl_rat DECIMAL(19,5) NULL;
+GO

@@ -142,6 +142,7 @@ def connect():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lawd", nargs="*", default=[]); ap.add_argument("--sgg", nargs="*", default=[]); ap.add_argument("--sql-out")
+    ap.add_argument("--skip-loaded", action="store_true", help="이미 폐쇄 표제부가 들어간 법정동은 건너뛴다(이어받기)")
     a = ap.parse_args()
     key = os.environ.get("DATA_GO_KR_KEY") or env().get("DATA_GO_KR_KEY", "")
     if not key: sys.exit(".env 의 DATA_GO_KR_KEY 가 비어 있습니다")
@@ -149,25 +150,45 @@ def main():
     lawds = list(a.lawd) + (lawds_of(conn, a.sgg) if a.sgg and conn else [])
     if a.sgg and not conn: sys.exit("--sgg 는 DB 에서 법정동 목록을 읽습니다 — --sql-out 일 땐 --lawd 로 주세요")
     if not lawds: sys.exit("--lawd 나 --sgg 를 주세요")
-    sql = ["/* load_closed_bld.py --sql-out (302) */\nSET NOCOUNT ON;\nGO\n"]; 합 = {}
+    if a.skip_loaded and conn:
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT LEFT(pnu,10) FROM silver.bld_closed_title WHERE pnu IS NOT NULL")
+        있음 = {r[0] for r in cur.fetchall()}
+        n0 = len(lawds); lawds = [x for x in lawds if x not in 있음]
+        print(f"  이미 받은 법정동 {n0 - len(lawds)}곳 건너뜀", flush=True)
+    sql = ["/* load_closed_bld.py --sql-out (302) */\nSET NOCOUNT ON;\nGO\n"]; 합 = {}; 실패 = []
+    t0 = time.monotonic()
     for i, lw in enumerate(lawds, 1):
         sgg, bjd = lw[:5], lw[5:10]
         got = {}
-        for op, table, cols in OPS:
-            raw = all_rows(key, op, sgg, bjd)
-            rows = [{c: f(x) for c, f in cols} for x in raw]
-            rows = [r for r in rows if r["mgm_shtreg_pk"]]
-            got[op] = (table, cols, rows); 합[op] = 합.get(op, 0) + len(rows)
-        print(f"  [{i}/{len(lawds)}] {lw} 표제부 {len(got['getSrTitleInfo'][2]):,} · 총괄 {len(got['getSrRecapTitleInfo'][2]):,}", flush=True)
+        try:
+            for op, table, cols in OPS:
+                raw = all_rows(key, op, sgg, bjd)
+                rows = [{c: f(x) for c, f in cols} for x in raw]
+                rows = [r for r in rows if r["mgm_shtreg_pk"]]
+                got[op] = (table, cols, rows)
+        except Exception as ex:
+            # ★ 덜 받은 법정동은 **넣지 않는다**(totalCount 확인). 나머지는 계속 받는다 — 끝에 목록으로 말한다.
+            실패.append((lw, str(ex)[:120])); print(f"  [{i}/{len(lawds)}] {lw} ★ 실패 — 넣지 않음: {str(ex)[:120]}", flush=True); continue
+        for op, (table, cols, rows) in got.items(): 합[op] = 합.get(op, 0) + len(rows)
+        print(f"  [{i}/{len(lawds)}] {lw} 표제부 {len(got['getSrTitleInfo'][2]):,} · 총괄 {len(got['getSrRecapTitleInfo'][2]):,}"
+              f"  ({(time.monotonic() - t0) / 60:.1f}분)", flush=True)
         if a.sql_out:
             for table, cols, rows in got.values(): sql += merge_sql(table, cols, rows)
         else:
             cur = conn.cursor()
-            for table, cols, rows in got.values():
-                for st in merge_sql(table, cols, rows): cur.execute(st.replace("\nGO\n", ""))
-            conn.commit()
+            try:
+                for table, cols, rows in got.values():
+                    for st in merge_sql(table, cols, rows): cur.execute(st.replace("\nGO\n", ""))
+                conn.commit()
+            except Exception as ex:
+                # ★ 넣다 실패한 법정동은 통째로 되돌리고(반쯤 넣지 않는다) 계속 간다 — 끝에 목록으로 말한다
+                conn.rollback(); 실패.append((lw, "넣기 " + str(ex)[:120]))
+                print(f"  ★ {lw} 넣기 실패 — 되돌림: {str(ex)[:160]}", flush=True)
     print(f"합: 표제부 {합.get('getSrTitleInfo', 0):,} · 총괄 {합.get('getSrRecapTitleInfo', 0):,}", flush=True)
-    sggs = sorted({lw[:5] for lw in lawds})
+    if 실패:
+        print(f"★ 못 받은 법정동 {len(실패)}곳 (다시: --skip-loaded): " + ", ".join(x for x, _ in 실패), flush=True)
+    sggs = sorted(set(a.sgg) | {lw[:5] for lw in lawds})   # 받은 게 없어도 요청한 시군구는 다시 묶는다(중간에 멈췄던 것)
     if a.sql_out:
         for g in sggs: sql.append(f"EXEC gold.usp_build_closed_site @sgg = '{g}';\nGO\n")
         io.open(a.sql_out, "w", encoding="utf-8").write("".join(sql)); print("SQL 파일:", a.sql_out); return
@@ -175,6 +196,7 @@ def main():
     for g in sggs:
         cur.execute("EXEC gold.usp_build_closed_site @sgg = %s", (g,)); print(f"철거 묶음 {g}:", cur.fetchone(), flush=True); conn.commit()
     conn.close()
+    if 실패: sys.exit(2)
 
 
 if __name__ == "__main__":
