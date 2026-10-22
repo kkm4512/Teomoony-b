@@ -172,6 +172,12 @@ BEGIN
                         WHERE cp.pnu = s.pnu) c
          WHERE c.n = 1 AND (@sgg IS NULL OR LEFT(s.pnu, 5) = @sgg);
     COMMIT;
+    /* 319: 지금 필지가 없는 자리에 자리 주기(합병된 필지 · 같은 도로명주소) — 결과 행을 버린다(아래 한 행이 load_closed_bld.py 의 몫) */
+    IF OBJECT_ID('gold.usp_closed_site_locate') IS NOT NULL
+    BEGIN
+        CREATE TABLE #loc319 (위치근거 NVARCHAR(12), n INT);
+        INSERT INTO #loc319 EXEC gold.usp_closed_site_locate @sgg = @sgg;
+    END
     SELECT 묶음 = COUNT(*), 이름있음 = SUM(CASE WHEN 이름 IS NOT NULL THEN 1 ELSE 0 END),
            위치있음 = SUM(CASE WHEN lat IS NOT NULL THEN 1 ELSE 0 END), 지금단지 = SUM(CASE WHEN now_complex_id IS NOT NULL THEN 1 ELSE 0 END)
       FROM gold.closed_site WHERE @sgg IS NULL OR LEFT(pnu, 5) = @sgg;
