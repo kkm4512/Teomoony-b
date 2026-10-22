@@ -32,3 +32,6 @@ etl/_queue/
 etl/*.out.txt
 deploy/sql/_버림_*
 .write_test*
+
+# 행안부 약국 원문 쪽(받은 그대로 · 다시 받을 수 있음)
+etl/_mois_raw/

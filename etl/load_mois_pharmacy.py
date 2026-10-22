@@ -56,9 +56,19 @@ def main():
             if not more: break
             rows += more; time.sleep(0.1)
         if len(rows) != tot: sys.exit(f"{code}: 받은 {len(rows)} ≠ totalCount {tot} — 넣지 않음")
-        keep += [x for x in rows if (x.get("LOTNO_ADDR") or x.get("ROAD_NM_ADDR") or "").startswith(("서울특별시 ", "경기도 안양시"))]
+        keep += rows   # ★ 개방자치단체코드로 이미 서울·안양만 — 주소 글자로 거르면 '서울시 광진구'·'상계9동 649' 같은 옛 표기 2천 건이 빠진다
         print(f"  {code}: {tot:,}", flush=True)
     print(f"서울·안양 {len(keep):,}", flush=True)
+    emit(keep, e, a.sql_out)
+
+
+def emit(keep, e, sql_out):
+    """받은 원문 행(keep) → MERGE SQL. sql_out 이면 파일로, 아니면 DB 로."""
+    try:
+        from pyproj import Transformer
+        _t = Transformer.from_crs("EPSG:5174", "EPSG:4326", always_xy=True); conv = _t.transform
+    except Exception:
+        sys.path.insert(0, HERE); from tm5174 import to_wgs84 as conv
     out = []
     for x in keep:
         try: X, Y = float(x.get("CRD_INFO_X") or ""), float(x.get("CRD_INFO_Y") or "")
@@ -83,8 +93,8 @@ def main():
                    f"  t.geog = CASE WHEN s.lat IS NOT NULL THEN geography::Point(s.lat, s.lng, 4326) END\n"
                    f"WHEN NOT MATCHED THEN INSERT ({', '.join(cols)}, geog) VALUES ({', '.join('s.' + c for c in cols)},\n"
                    f"  CASE WHEN s.lat IS NOT NULL THEN geography::Point(s.lat, s.lng, 4326) END);\nGO\n")
-    if a.sql_out:
-        io.open(a.sql_out, "w", encoding="utf-8").write("".join(sql)); print("SQL 파일:", a.sql_out); return
+    if sql_out:
+        io.open(sql_out, "w", encoding="utf-8").write("".join(sql)); print("SQL 파일:", sql_out, len(out)); return
     import pymssql
     conn = pymssql.connect(server=e.get("DB_HOST", "127.0.0.1"), port=int(e.get("DB_PORT", 11433)), user=e.get("DB_USER", "sa"),
                            password=e.get("DB_PASSWORD", ""), database=e.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
