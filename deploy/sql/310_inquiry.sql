@@ -24,3 +24,8 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_inquiry_때' AND object_id = OBJECT_ID('ops.inquiry'))
 CREATE INDEX ix_inquiry_때 ON ops.inquiry (때 DESC);
 GO
+/* 2026-10-22 18:37 사장님 "이용현황 오른쪽에 탭 — 질문이랑 답변 모두가 볼 수 있게": 답변 칸. 답변은 root 만(서버가 역할을 본다). */
+IF COL_LENGTH('ops.inquiry', '답변') IS NULL ALTER TABLE ops.inquiry ADD 답변 NVARCHAR(4000) NULL;
+IF COL_LENGTH('ops.inquiry', '답변때') IS NULL ALTER TABLE ops.inquiry ADD 답변때 DATETIME2(0) NULL;
+IF COL_LENGTH('ops.inquiry', '답변자') IS NULL ALTER TABLE ops.inquiry ADD 답변자 NVARCHAR(50) NULL;
+GO
