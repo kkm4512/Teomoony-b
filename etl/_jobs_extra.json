@@ -159,7 +159,9 @@
   "python",
   "apply_sql.py",
   "286_merge_plan.sql",
-  "287_merge_apply.sql"
+  "287_merge_apply.sql",
+  "331_merge_kapt_apply.sql",
+  "332_after_merge_kapt.sql"
  ],
  "aa-trademax-bg": [
   "python",
