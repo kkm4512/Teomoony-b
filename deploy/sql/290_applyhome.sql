@@ -165,6 +165,28 @@ BEGIN
          WHERE LEN(c.oldest_use_apr) = 8 AND c.oldest_use_apr >= REPLACE(p.rcrit_pblanc_de, '-', '')
            AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
          GROUP BY p.house_manage_no, p.pblanc_no HAVING COUNT(DISTINCT c.complex_id) = 1;
+        /* 2026-10-23 사장님 "확실한건만 · ㄱㄱ"(11-224): 공고 지번 = **K-apt 지번**(둘 다 사업 전 지번 그대로인 곳이 많다) · 그 지번의 K-apt 가 **하나**.
+           ① 그 K-apt 가 대장 단지에 이어져 있고(317·321 코드) 그 단지가 공고 뒤 준공 → 그 단지
+           ② 그 K-apt 가 대장이 아직 없는 신축이고 K-apt 사용승인이 공고 뒤(또는 비어 있음) → 그 K-apt(신축 핀)
+           공고 지번이 지적도에서 사라진 곳(합필·환지)이나 대장이 아직 안 들어온 새 단지가 이 길로 이어진다. 이름은 안 본다. */
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT p.house_manage_no, p.pblanc_no, x.complex_id, x.kapt_code,
+               CASE WHEN x.complex_id IS NOT NULL THEN N'공고 지번 = K-apt 지번 · 그 K-apt 의 단지 · 공고 뒤 준공'
+                    ELSE N'공고 지번 = K-apt 지번 · 대장 없는 신축(K-apt) · 공고 뒤 사용승인' END, 0
+          FROM silver.applyhome_pblanc p
+          CROSS APPLY (SELECT kapt_code = MIN(k.kapt_code), n = COUNT(*) FROM silver.kapt_complex k WHERE k.is_current = 1 AND k.pnu = p.pnu) kk
+          CROSS APPLY (SELECT k.kapt_code, k.kapt_usedate, complex_id = ck.complex_id, 준공 = c.oldest_use_apr, 세대 = c.hhld_cnt_sum, 활성 = c.is_active, 합침 = c.merged_into,
+                              k세대 = COALESCE(NULLIF(k.hhld_cnt, 0), k.ho_cnt)
+                         FROM silver.kapt_complex k
+                         LEFT JOIN gold.complex_kapt ck ON ck.kapt_code = k.kapt_code
+                         LEFT JOIN gold.complex c ON c.complex_id = ck.complex_id
+                        WHERE k.is_current = 1 AND k.kapt_code = kk.kapt_code) x
+         WHERE p.pnu IS NOT NULL AND kk.n = 1
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
+           /* 공급 세대가 그 단지(K-apt) 세대보다 많으면 같은 단지가 아니다 — 롯데캐슬 이스트폴(631) 이 같은 지번의 어울채행복주택(300)에 붙던 것(첫 판에서 잡음) */
+           AND (p.tot_suply IS NULL OR p.tot_suply <= COALESCE(x.세대, x.k세대, 2147483647))
+           AND ((x.complex_id IS NOT NULL AND x.활성 = 1 AND x.합침 IS NULL AND x.세대 > 0 AND LEN(x.준공) = 8 AND x.준공 >= REPLACE(p.rcrit_pblanc_de, '-', ''))
+             OR (x.complex_id IS NULL AND (NULLIF(x.kapt_usedate, '') IS NULL OR x.kapt_usedate >= REPLACE(p.rcrit_pblanc_de, '-', ''))));
     COMMIT;
 
     SELECT 공고 = (SELECT COUNT(*) FROM silver.applyhome_pblanc),

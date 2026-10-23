@@ -46,10 +46,17 @@ BEGIN
     SELECT t.trade_sk, t.complex_id, 길 = CAST(N'K-apt 지번' AS NVARCHAR(20))
       INTO #f
       FROM #t t
-      JOIN (SELECT apt_seq, match_pnu, 처음 = MIN(deal_ymd) FROM silver.rtms_trade
+      JOIN (SELECT apt_seq, match_pnu, 처음 = MIN(deal_ymd), 끝 = MAX(deal_ymd) FROM silver.rtms_trade
              WHERE trade_kind NOT LIKE 'SILV%' AND apt_seq IS NOT NULL AND match_pnu IN (SELECT pnu FROM #kp)
              GROUP BY apt_seq, match_pnu) g ON g.apt_seq = t.apt_seq AND g.match_pnu = t.match_pnu
-     WHERE g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -1, TRY_CONVERT(DATE, t.준공)), 112);
+     WHERE g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -1, TRY_CONVERT(DATE, t.준공)), 112)
+        /* 2026-10-23 사장님 "확실한건만 · ㄱㄱ"(LH수서1·2: 공공임대 전월세가 사용승인 1~2년 전에 신고됨):
+           그 지번에 폐쇄 대장이 없고 · 같은 aptSeq 가 **사용승인 뒤에도 계속 거래**되고 · 첫 계약이 사용승인 3년 전 이후.
+           ★ '폐쇄 대장 없음' 만으로는 모자랐다 — 래미안도곡카운티 지번에 옛 '진달래'(2006~) 거래가 폐쇄 대장 없이 있었다(첫 판에서 잡음).
+             헐린 옛 건물은 새 건물 사용승인 **뒤에** 거래될 수 없으므로 '뒤에도 거래' 가 옛 건물을 막는다. */
+        OR (NOT EXISTS (SELECT 1 FROM gold.closed_site s WHERE s.pnu = t.match_pnu)
+            AND g.끝 >= t.준공
+            AND g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -3, TRY_CONVERT(DATE, t.준공)), 112));
        /* (첫 판에는 '폐쇄 대장이 있으면 닫힌 날 이후만' 도 걸었다 — 택지의 옛 비주거 대장이 새 단지 입주 뒤에 닫힌 곳(강동리엔파크11단지)까지 막아서 뺐다.
           옛 아파트 거래는 aptSeq 의 첫 계약이 사용승인 1년 전보다 훨씬 이르므로 위 조건 하나로 걸러진다 — 헐고 새로 짓는 데 1년 안에 끝나는 곳은 없다.) */
 
@@ -67,7 +74,7 @@ BEGIN
     HAVING COUNT(DISTINCT cb.complex_id) = 1;
     CREATE CLUSTERED INDEX x ON #rb (na_road_cd, bm, bs);
     IF OBJECT_ID('tempdb..#rt') IS NOT NULL DROP TABLE #rt;
-    SELECT t.trade_sk, t.apt_seq, t.road_cd, rb = TRY_CAST(t.road_bonbun AS INT), rs = ISNULL(TRY_CAST(t.road_bubun AS INT), 0), t.deal_ymd, r.complex_id, r.준공
+    SELECT t.trade_sk, t.apt_seq, t.road_cd, rb = TRY_CAST(t.road_bonbun AS INT), rs = ISNULL(TRY_CAST(t.road_bubun AS INT), 0), t.deal_ymd, r.complex_id, r.준공, t.match_pnu
       INTO #rt
       FROM silver.rtms_trade t
       JOIN #rb r ON r.na_road_cd = t.road_cd AND r.bm = TRY_CAST(t.road_bonbun AS INT) AND r.bs = ISNULL(TRY_CAST(t.road_bubun AS INT), 0)
@@ -77,9 +84,13 @@ BEGIN
     INSERT INTO #f (trade_sk, complex_id, 길)
     SELECT t.trade_sk, t.complex_id, N'도로명코드'
       FROM #rt t
-      JOIN (SELECT apt_seq, road_cd, rb, rs, 처음 = MIN(deal_ymd) FROM #rt GROUP BY apt_seq, road_cd, rb, rs) g
+      JOIN (SELECT apt_seq, road_cd, rb, rs, 처음 = MIN(deal_ymd), 끝 = MAX(deal_ymd) FROM #rt GROUP BY apt_seq, road_cd, rb, rs) g
         ON g.apt_seq = t.apt_seq AND g.road_cd = t.road_cd AND g.rb = t.rb AND g.rs = t.rs
-     WHERE g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -1, TRY_CONVERT(DATE, t.준공)), 112);
+     WHERE g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -1, TRY_CONVERT(DATE, t.준공)), 112)
+        /* ① 과 같은 완화(폐쇄 대장 없음 · 사용승인 뒤에도 거래 · 첫 계약 3년 안) — LH수서1단지 */
+        OR (NOT EXISTS (SELECT 1 FROM gold.closed_site s WHERE s.pnu = t.match_pnu)
+            AND g.끝 >= t.준공
+            AND g.처음 >= CONVERT(CHAR(8), DATEADD(YEAR, -3, TRY_CONVERT(DATE, t.준공)), 112));
 
     SET @n = (SELECT COUNT(*) FROM #f);
     IF @dry = 1

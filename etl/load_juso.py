@@ -27,7 +27,8 @@ def env():
 
 E = env(); KEY = E.get("JUSO_KEY", "").strip()
 ASK = {"kapt": "SELECT keyword FROM gold.v_juso_ask_kapt v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)",
-       "closed": "SELECT keyword FROM gold.v_juso_ask_closed v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)"}
+       "closed": "SELECT keyword FROM gold.v_juso_ask_closed v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)",
+       "complex": "SELECT keyword FROM gold.v_juso_ask_complex v WHERE NOT EXISTS (SELECT 1 FROM silver.juso_lookup l WHERE l.keyword = v.keyword)"}
 STOP = {"E0001", "E0014", "E0015", "-999"}      # 키 오류 · 한도 · 시스템 — 멈춘다
 
 

@@ -61,6 +61,17 @@ SELECT DISTINCT keyword = CAST(LTRIM(RTRIM(LEFT(s.new_plat_plc, CHARINDEX(N' (',
   FROM gold.closed_site s
  WHERE s.lat IS NULL AND s.new_plat_plc LIKE N'%[0-9]%' AND (s.pnu LIKE '11%' OR s.pnu LIKE '4117%');
 GO
+/* 2026-10-23(11-224): 좌표 없는 대장 단지(서울·안양) — 동 대장 도로명주소(괄호 앞) */
+CREATE OR ALTER VIEW gold.v_juso_ask_complex
+AS
+SELECT DISTINCT keyword = CAST(LTRIM(RTRIM(LEFT(b.new_plat_plc, CHARINDEX(N' (', b.new_plat_plc + N' (') - 1))) AS NVARCHAR(300))
+  FROM gold.complex c
+  JOIN gold.complex_bld cb ON cb.complex_id = c.complex_id
+  JOIN silver.bld_title b ON b.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND b.is_current = 1
+ WHERE c.is_active = 1 AND c.merged_into IS NULL AND c.centroid_lat IS NULL
+   AND (c.sigungu_cd LIKE '11%' OR c.sigungu_cd LIKE '4117%')
+   AND b.new_plat_plc LIKE N'%[0-9]%' AND TRY_CAST(b.na_main_bun AS INT) > 0;
+GO
 /* 도로명 마스터에 받은 도로 넣기 — 받은 뒤 부른다 */
 CREATE OR ALTER PROCEDURE meta.usp_road_code_from_juso
 AS
