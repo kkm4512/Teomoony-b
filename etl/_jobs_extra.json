@@ -349,5 +349,21 @@
   "closed",
   "--hist-probe",
   "200"
+ ],
+ "closed-ops-probe": [
+  "python",
+  "probe_closed_ops.py"
+ ],
+ "closed-detail-test": [
+  "python",
+  "load_closed_detail.py",
+  "--only",
+  "1",
+  "--limit",
+  "5"
+ ],
+ "closed-detail": [
+  "python",
+  "load_closed_detail.py"
  ]
 }
