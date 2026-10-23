@@ -122,6 +122,10 @@ BEGIN
         COMMIT;
         SET @lo = @hi;
     END
+    /* 328 (2026-10-23): 옛 지번이 토지이동으로 합병된 주거 거래 → 합병된 필지의 세대 단지(사용승인 뒤 계약만) */
+    DECLARE @lm INT = 0;
+    IF OBJECT_ID('gold.usp_match_trade_landmove') IS NOT NULL EXEC gold.usp_match_trade_landmove @dry = 0, @n = @lm OUTPUT;
+    SET @n = @n + ISNULL(@lm, 0);
 END
 GO
 EXEC gold.usp_match_trade_kapt @dry = 1;   -- 미리보기(실제 붙이기는 282 안에서 · 또는 @dry = 0)
