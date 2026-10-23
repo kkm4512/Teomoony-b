@@ -365,5 +365,13 @@
  "closed-detail": [
   "python",
   "load_closed_detail.py"
+ ],
+ "ned-closed": [
+  "python",
+  "load_ned_aphus.py",
+  "--target",
+  "closed",
+  "--workers",
+  "2"
  ]
 }

@@ -54,13 +54,19 @@ def s(v):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--workers", type=int, default=4); ap.add_argument("--max-min", type=float, default=0)
+    ap.add_argument("--target", default="rh", choices=["rh", "closed"],
+                    help="rh = 연립·다세대 호가 있는 지금 필지(처음 것) · closed = 폐쇄·말소 집합 대장 지번(323 v_closed_detail_target, 2026-10-23 사장님 '2번 ㅇㅋ')")
     a = ap.parse_args()
     if not KEY: sys.exit(".env 에 VWORLD_NED_KEY / VWORLD_KEY 가 없습니다")
     import pymssql
     conn = pymssql.connect(server=E.get("DB_HOST", "127.0.0.1"), port=int(E.get("DB_PORT", 11433)), user=E.get("DB_USER", "sa"),
                            password=E.get("DB_PASSWORD", ""), database=E.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
     cur = conn.cursor()
-    cur.execute("""SELECT DISTINCT e.pnu FROM silver.bld_expos e
+    if a.target == "closed":
+        cur.execute("""SELECT t.pnu FROM gold.v_closed_detail_target t
+                        WHERE NOT EXISTS (SELECT 1 FROM silver.ned_aphus_done d WHERE d.pnu = t.pnu) ORDER BY t.차례, t.pnu""")
+    else:
+      cur.execute("""SELECT DISTINCT e.pnu FROM silver.bld_expos e
                     JOIN silver.bld_expos_pubuse_area x ON x.mgm_bldrgst_pk = e.mgm_bldrgst_pk AND x.is_current = 1
                      AND x.expos_pubuse_gb_cd = '1' AND x.main_purps_cd IN ('02002', '02003')
                    WHERE e.is_current = 1 AND e.pnu IS NOT NULL AND (LEFT(e.pnu, 2) = '11' OR LEFT(e.pnu, 5) IN ('41171', '41173'))
