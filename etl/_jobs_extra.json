@@ -452,5 +452,20 @@
   "ad-schoolinfo-par": [
     "python",
     "load_schoolinfo.py"
+  ],
+  "ac-kaptcost-retry-bg": [
+    "python",
+    "kapt_cost_go.py",
+    "--months",
+    "2",
+    "--workers",
+    "2",
+    "--sgg",
+    "11170",
+    "11200"
+  ],
+  "ae-schoolgroup-par": [
+    "python",
+    "load_school_group.py"
   ]
 }
