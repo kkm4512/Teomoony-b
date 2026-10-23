@@ -247,8 +247,10 @@ def main():
             for svc, op, fld, amt in rows:
                 cur.execute("""
 MERGE silver.kapt_cost AS t
-USING (SELECT %s AS kapt_code, %s AS ym, %s AS svc, %s AS op, %s AS fld,
+USING (SELECT CAST(%s AS VARCHAR(20)) AS kapt_code, CAST(%s AS CHAR(6)) AS ym, CAST(%s AS VARCHAR(3)) AS svc,
+              CAST(%s AS VARCHAR(60)) AS op, CAST(%s AS VARCHAR(40)) AS fld,
               CAST(%s AS DECIMAL(20,4)) AS amount) AS s
+/* 2026-10-23: 문자열 파라미터가 nvarchar 로 와서 열 쪽 변환 → 표를 통째로 훑었다(NED 때와 같은 일) — 열 형식으로 CAST */
    ON t.kapt_code = s.kapt_code AND t.ym = s.ym AND t.op = s.op AND t.fld = s.fld
 /* (a IS NULL) <> (b IS NULL) 은 T-SQL 에서 문법 오류다 — 불리언을 값으로 못 쓴다.
    s.amount 는 NULL 로 올 일이 없다(to_num 이 None 이면 적재를 건너뛴다). */
