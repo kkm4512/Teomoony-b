@@ -221,6 +221,41 @@ BEGIN
            AND MIN(CASE WHEN LEN(c.oldest_use_apr) = 8 THEN TRY_CONVERT(DATE, c.oldest_use_apr) END)
                >= DATEADD(YEAR, -5, TRY_CONVERT(DATE, REPLACE(p.rcrit_pblanc_de, '-', '')))
            AND (p.tot_suply IS NULL OR MIN(c.hhld_cnt_sum) >= p.tot_suply);
+        /* 일곱째 (2026-10-23 22:25 사장님 "이런 규칙이 괜찮아 보여", 11-249): **같은 공고 지번의 다른 공고가 이미 이어진 곳**.
+           청약홈은 무순위·재공급·임의공급마다 관리번호를 새로 붙여, 본 분양은 이어졌는데 뒤 공고만 남는 일이 있다(강변역 센트럴 아이파크 2026.09 불법행위 재공급).
+           ① 그 지번에서 이미 이어진 공고들이 가리키는 곳이 **하나**(단지 또는 대장 없는 K-apt)
+           ② 그 필지에 그곳 말고 **다른 지금 단지 · K-apt 가 없음**(원베일리 조합원 취소분은 같은 필지 상가 단지가 있어 막힘)
+           ③ 이 공고일 ≥ 이어진 공고 중 첫 공고일(먼저 나온 공고는 옛 사업일 수 있다 — 해링턴플레이스 노원 센트럴 본 공고는 막힘)
+           ④ 공급 ≤ 그곳 세대.  이름은 안 본다. 위 여섯 길이 다 끝난 뒤 한 번만(이 길로 이은 것을 다시 형제로 쓰지 않는다).
+           시험(993, 쓰기 전): 전국 20 중 17 이음(서울 10) · 막힘 3. */
+        IF OBJECT_ID('tempdb..#형') IS NOT NULL DROP TABLE #형;
+        SELECT q.pnu, 곳n = COUNT(DISTINCT COALESCE('C' + CAST(l.complex_id AS VARCHAR(12)), 'K' + l.kapt_code)),
+               complex_id = MIN(l.complex_id), kapt_code = MIN(l.kapt_code), 첫 = MIN(REPLACE(q.rcrit_pblanc_de, '-', ''))
+          INTO #형
+          FROM gold.applyhome_link l JOIN silver.applyhome_pblanc q ON q.house_manage_no = l.house_manage_no AND q.pblanc_no = l.pblanc_no
+         WHERE q.pnu IS NOT NULL
+         GROUP BY q.pnu;
+        IF OBJECT_ID('tempdb..#형후보') IS NOT NULL DROP TABLE #형후보;
+        SELECT p.house_manage_no, p.pblanc_no, p.pnu, p.tot_suply, 공고 = REPLACE(p.rcrit_pblanc_de, '-', ''), h.곳n, h.complex_id, h.kapt_code, h.첫
+          INTO #형후보
+          FROM silver.applyhome_pblanc p JOIN #형 h ON h.pnu = p.pnu
+         WHERE NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no);
+        /* 집계 안에 서브쿼리를 넣지 않는다 — 다른 단지 · K-apt 수와 세대는 칸으로 먼저 */
+        IF OBJECT_ID('tempdb..#형셈') IS NOT NULL DROP TABLE #형셈;
+        SELECT u.house_manage_no, u.pblanc_no,
+               다른단지 = (SELECT COUNT(DISTINCT cp.complex_id) FROM gold.complex_pnu cp JOIN gold.complex c ON c.complex_id = cp.complex_id
+                           WHERE cp.pnu = u.pnu AND c.is_active = 1 AND c.merged_into IS NULL AND (u.complex_id IS NULL OR cp.complex_id <> u.complex_id)),
+               다른kapt = (SELECT COUNT(*) FROM silver.kapt_complex k WHERE k.is_current = 1 AND k.pnu = u.pnu AND (u.kapt_code IS NULL OR k.kapt_code <> u.kapt_code)
+                           AND NOT EXISTS (SELECT 1 FROM gold.complex_kapt ck WHERE ck.kapt_code = k.kapt_code AND ck.complex_id = u.complex_id)),
+               세대 = COALESCE((SELECT c.hhld_cnt_sum FROM gold.complex c WHERE c.complex_id = u.complex_id),
+                               (SELECT TOP 1 COALESCE(NULLIF(k.hhld_cnt, 0), k.ho_cnt) FROM silver.kapt_complex k WHERE k.is_current = 1 AND k.kapt_code = u.kapt_code))
+          INTO #형셈 FROM #형후보 u;
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT u.house_manage_no, u.pblanc_no, u.complex_id, u.kapt_code,
+               N'같은 공고 지번의 다른 공고가 이어진 곳 · 그 필지에 다른 단지 없음 · 첫 공고 이후 · 세대 ≥ 공급', 0
+          FROM #형후보 u JOIN #형셈 o ON o.house_manage_no = u.house_manage_no AND o.pblanc_no = u.pblanc_no
+         WHERE u.곳n = 1 AND o.다른단지 = 0 AND o.다른kapt = 0 AND u.공고 >= u.첫
+           AND (u.tot_suply IS NULL OR u.tot_suply <= ISNULL(o.세대, 2147483647));
     COMMIT;
 
     SELECT 공고 = (SELECT COUNT(*) FROM silver.applyhome_pblanc),
@@ -230,6 +265,7 @@ BEGIN
            단지에 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE complex_id IS NOT NULL),
            신축에 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE complex_id IS NULL AND kapt_code IS NOT NULL),
            오피스텔길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'오피스텔·도시형%'),
-           무순위길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'무순위·잔여%');
+           무순위길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'무순위·잔여%'),
+           형제길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'같은 공고 지번의 다른 공고%');
 END
 GO
