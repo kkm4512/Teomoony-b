@@ -20,8 +20,10 @@ def main():
     ap.add_argument("--from", dest="ym_from", default="202001")
     ap.add_argument("--to", dest="ym_to", default=time.strftime("%Y%m"))
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--sgg", nargs="*", default=None, help="받을 구만(기본: 서울 25구 + 안양 2구). 2026-10-23: 안양 보류 — 서울만 줄 때")
     a = ap.parse_args()
-    print(f"분양권·입주권 전매 · {a.ym_from}~{a.ym_to} · {len(GUS)}구 · 스레드 {a.workers}", flush=True)
+    gus = [g for g in GUS if not a.sgg or g in a.sgg]
+    print(f"분양권·입주권 전매 · {a.ym_from}~{a.ym_to} · {len(gus)}구 · 스레드 {a.workers}", flush=True)
     t0 = time.time(); bad = []
     def one(sgg):
         st = time.time()
@@ -34,7 +36,7 @@ def main():
             print(f"  {'OK' if p.returncode == 0 else '!!'} {sgg}  {int(time.time()-st)}초", flush=True)
             for ln in [x for x in out if 'SILV_TRADE' in x or '중단' in x or 'Error' in x][-3:]: print("     " + ln, flush=True)
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        list(ex.map(one, GUS))
+        list(ex.map(one, gus))
     print(f"끝 · {int(time.time()-t0)}초 · 실패 {len(bad)}곳 {' '.join(bad)}", flush=True)
     sys.exit(1 if bad else 0)
 
