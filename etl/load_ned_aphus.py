@@ -74,7 +74,8 @@ def main():
     todo = [r[0] for r in cur.fetchall()]
     print(f"받을 필지 {len(todo):,}", flush=True)
     t0 = time.monotonic(); n = 0; 행 = 0; 실패 = 0
-    SQL = """MERGE silver.ned_aphus_price AS t USING (SELECT %s pnu, %s 공동주택코드, %s 동명, %s 호명, %s 기준연도, %s 기준월) k
+    # ★ 2026-10-23: 키 칸을 표의 형(CHAR · VARCHAR)으로 바꿔 넘긴다 — N'..'(nvarchar) 그대로면 PK 를 못 타고 표를 훑었다(한 줄 MERGE 에 읽기 20만 · 5분에 34줄).
+    SQL = """MERGE silver.ned_aphus_price AS t USING (SELECT CAST(%s AS CHAR(19)) pnu, CAST(%s AS VARCHAR(20)) 공동주택코드, %s 동명, %s 호명, CAST(%s AS CHAR(4)) 기준연도, CAST(%s AS CHAR(2)) 기준월) k
              ON t.pnu = k.pnu AND t.공동주택코드 = k.공동주택코드 AND t.동명 = k.동명 AND t.호명 = k.호명 AND t.기준연도 = k.기준연도 AND t.기준월 = k.기준월
              WHEN MATCHED THEN UPDATE SET 층=%s, 전용면적=%s, 공시가격=%s, 공동주택명=%s, 구분=%s, 대장구분=%s, 특수지명=%s, 원문갱신일=%s, 받은시각=SYSDATETIME()
              WHEN NOT MATCHED THEN INSERT (pnu, 공동주택코드, 동명, 호명, 기준연도, 기준월, 층, 전용면적, 공시가격, 공동주택명, 구분, 대장구분, 특수지명, 원문갱신일)
@@ -100,14 +101,14 @@ def main():
                     v = (s(x.get("floorNm")), 면, 가, s(x.get("aphusNm")), s(x.get("aphusSeCodeNm")), s(x.get("regstrSeCodeNm")),
                          s(x.get("spclLandNm")), s(x.get("lastUpdtDt")))
                     cur.execute(SQL, k + v + k + v)
-                cur.execute("""MERGE silver.ned_aphus_done AS t USING (SELECT %s pnu) k ON t.pnu = k.pnu
+                cur.execute("""MERGE silver.ned_aphus_done AS t USING (SELECT CAST(%s AS CHAR(19)) pnu) k ON t.pnu = k.pnu
                                WHEN MATCHED THEN UPDATE SET 건수 = %s, 받은시각 = SYSDATETIME()
                                WHEN NOT MATCHED THEN INSERT (pnu, 건수) VALUES (%s, %s);""", (p, len(rows), p, len(rows)))
                 n += 1; 행 += len(rows)
             except Exception as e:
                 실패 += 1
                 if 실패 <= 20: print(f"  ! {p}: {str(e)[:120]}", flush=True)
-            if n % 100 == 0: conn.commit()
+            conn.commit()   # 2026-10-23: 필지마다 저장 — 100필지씩 묶으면 잠금이 표 전체로 커져 단지 상세가 1분씩 기다렸다(11-226)
             if n and n % 1000 == 0:
                 print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{len(todo):,} 필지 · 행 {행:,} · 실패 {실패}", flush=True)
             if a.max_min and (time.monotonic() - t0) / 60 > a.max_min:
