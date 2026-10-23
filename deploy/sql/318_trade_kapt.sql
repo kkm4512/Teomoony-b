@@ -126,6 +126,9 @@ BEGIN
     DECLARE @lm INT = 0;
     IF OBJECT_ID('gold.usp_match_trade_landmove') IS NOT NULL EXEC gold.usp_match_trade_landmove @dry = 0, @n = @lm OUTPUT;
     SET @n = @n + ISNULL(@lm, 0);
+    /* 329 (2026-10-23): 옛 건물 거래가 새 건물에 붙은 것을 뗀다(282 가 지번으로 다시 붙여도 여기서 다시 뗀다) */
+    DECLARE @dt INT = 0;
+    IF OBJECT_ID('gold.usp_detach_old_building_trades') IS NOT NULL EXEC gold.usp_detach_old_building_trades @dry = 0, @n = @dt OUTPUT;
 END
 GO
 EXEC gold.usp_match_trade_kapt @dry = 1;   -- 미리보기(실제 붙이기는 282 안에서 · 또는 @dry = 0)
