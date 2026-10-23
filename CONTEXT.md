@@ -10570,3 +10570,12 @@ v_lawd_map 3개 동         5,568ms → 37ms
 - **★ 단지 상세가 1분씩 멈춤(공개 사이트)**: ned-closed 적재의 MERGE silver.ned_aphus_price(100필지마다 커밋)가 잠금을 잡고, 상세의 호·공시가격 쿼리(v_complex_ho_price)가 LCK_M_IS 로 기다렸다.
   → 그 세 쿼리(_q_hos · _q_hoPrc · /api/ho 의 가격)에 READ UNCOMMITTED. 헬리오시티 상세 >45초 → 4.5초.
   ⚠ 다음에 적재기를 손볼 때: load_ned_aphus.py 는 필지마다 커밋하도록(잠금 승격 막기).
+
+### 11-227 좌표 없는 단지 — VWorld 지오코더 · PC 길게 눌러 돌리기 (2026-10-23 12:17 사장님 "1. ㄱㄱ · 2 데스크탑은 마우스가 꾹눌린 상태면 회전")
+- **326_vworld_geocode**: silver.vworld_geocode(물은 주소 PK · status · x · y · 정제 주소 원문) · gold.v_geocode_ask_complex · gold.usp_complex_geo_juso 다시 정의(① 324 공식 지번 필지 → ② 지오코더 점).
+  규칙: 동 대장 도로명주소(괄호 앞) = 지오코더 정제 주소(괄호 앞) **글자 그대로** · 자리만(complex_pnu 안 건드림) · 324 필지가 있으면 그쪽 먼저.
+  물은 330 → OK 170 · NOT_FOUND 160 · 정제 주소가 달라 막은 것 31(대장 주소가 '서울특별시 강남구 54' 처럼 도로명이 빠진 것 → 다른 도로로 정제됨). **자리 준 단지 145**(마곡 엠밸리 9단지 1,529세대 · 이랜드 PEER DMC 382 · 우디안4단지 289 · 은평뉴타운 폭포동 · 파크샤인 · 우디안3단지 …) · 324 와 합쳐 489 · 그 단지 거래 4,544.
+  받는 법: /api/_export?name=geo_ask → VM `python3 etl/geocode_vm.py _export/geo_ask.txt ../deploy/sql/p_geo.sql 160`(이어받기) → _apply → EXEC gold.usp_complex_geo_juso.
+  ⚠ 324 파일을 다시 돌리면 ② 가 빠진 옛 정의로 돌아간다 — 326 이 마지막 정의.
+- **PC 회전**: 지도를 0.45초 움직이지 않고 누르고 있다가 끌면 가운데 축으로 회전(app.js 길게눌러돌리기) · 바로 끌면 이동 · 회전 뒤 click 한 번 삼킴(마커 위에서 돌려도 단지가 안 열림). 시험: 30° 회전 · 중심 이동 0 · 단지 안 열림 · 빠른 끌기는 이동.
+- 정책 '데이터 잇기 규칙' 의 지도 자리 항목에 지오코더 길 추가.
