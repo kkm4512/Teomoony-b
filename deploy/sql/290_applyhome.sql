@@ -187,6 +187,40 @@ BEGIN
            AND (p.tot_suply IS NULL OR p.tot_suply <= COALESCE(x.세대, x.k세대, 2147483647))
            AND ((x.complex_id IS NOT NULL AND x.활성 = 1 AND x.합침 IS NULL AND x.세대 > 0 AND LEN(x.준공) = 8 AND x.준공 >= REPLACE(p.rcrit_pblanc_de, '-', ''))
              OR (x.complex_id IS NULL AND (NULLIF(x.kapt_usedate, '') IS NULL OR x.kapt_usedate >= REPLACE(p.rcrit_pblanc_de, '-', ''))));
+        /* 2026-10-23 사장님 "1 ㄱㄱ"(11-225) 다섯째: **오피스텔 · 도시형생활주택 · 생활형숙박시설** 공고.
+           오피스텔은 세대가 아니라 호로 세서 대장 세대가 0 이다 → 셋째 길(세대 단지)에 안 걸린다. 또 준공 뒤 남은 호를 다시 파는 공고가 많다.
+           공고 지번 = 단지 필지 · 그 필지의 단지가 **하나** · 그 단지 사용승인 ≥ 공고일 − 3년 → 그 단지.
+           막는 것(서울 실측 10건): 청량리동 235-4(1978) · 한강로3가 65-115(1985) · 오크우드(1999) 같은 **헐리기 전 옛 건물** · 3년 넘게 떨어진 것. 이름은 안 본다. */
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT p.house_manage_no, p.pblanc_no, MIN(c.complex_id),
+               (SELECT TOP 1 ck.kapt_code FROM gold.complex_kapt ck WHERE ck.complex_id = MIN(c.complex_id)),
+               N'오피스텔·도시형 · 공고 지번 = 단지 필지 · 필지 단지 1 · 공고 3년 전 이후 준공', 0
+          FROM silver.applyhome_pblanc p
+          JOIN gold.complex_pnu cp ON cp.pnu = p.pnu
+          JOIN gold.complex c ON c.complex_id = cp.complex_id AND c.is_active = 1 AND c.merged_into IS NULL
+         WHERE p.house_dtl_secd_nm IN (N'오피스텔', N'도시형생활주택', N'생활형숙박시설')
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
+         GROUP BY p.house_manage_no, p.pblanc_no, p.rcrit_pblanc_de
+        HAVING COUNT(DISTINCT c.complex_id) = 1
+           AND MIN(CASE WHEN LEN(c.oldest_use_apr) = 8 THEN TRY_CONVERT(DATE, c.oldest_use_apr) END)
+               >= DATEADD(YEAR, -3, TRY_CONVERT(DATE, REPLACE(p.rcrit_pblanc_de, '-', '')));
+        /* 여섯째: **무순위 · 임의공급 · 불법행위 재공급** — 준공 뒤 남은 집 · 계약 취소분을 다시 파는 공고(신림스카이 17차 · 어반클라쎄목동 11차 …).
+           공고 지번 = 단지 필지 · 그 필지의 **세대 단지가 하나** · 사용승인 ≥ 공고일 − 5년 · 세대 ≥ 공급 → 그 단지.
+           막는 것(서울 실측 2건): 쌍문동 380-18(2008년 7세대) · 방배동 913-12(1978) — 헐리기 전 옛 건물. */
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT p.house_manage_no, p.pblanc_no, MIN(c.complex_id),
+               (SELECT TOP 1 ck.kapt_code FROM gold.complex_kapt ck WHERE ck.complex_id = MIN(c.complex_id)),
+               N'무순위·잔여 · 공고 지번 = 단지 필지 · 세대 단지 1 · 공고 5년 전 이후 준공 · 세대 ≥ 공급', 0
+          FROM silver.applyhome_pblanc p
+          JOIN gold.complex_pnu cp ON cp.pnu = p.pnu
+          JOIN gold.complex c ON c.complex_id = cp.complex_id AND c.is_active = 1 AND c.merged_into IS NULL AND c.hhld_cnt_sum > 0
+         WHERE p.house_secd_nm IN (N'무순위', N'임의공급', N'불법행위 재공급')
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
+         GROUP BY p.house_manage_no, p.pblanc_no, p.rcrit_pblanc_de, p.tot_suply
+        HAVING COUNT(DISTINCT c.complex_id) = 1
+           AND MIN(CASE WHEN LEN(c.oldest_use_apr) = 8 THEN TRY_CONVERT(DATE, c.oldest_use_apr) END)
+               >= DATEADD(YEAR, -5, TRY_CONVERT(DATE, REPLACE(p.rcrit_pblanc_de, '-', '')))
+           AND (p.tot_suply IS NULL OR MIN(c.hhld_cnt_sum) >= p.tot_suply);
     COMMIT;
 
     SELECT 공고 = (SELECT COUNT(*) FROM silver.applyhome_pblanc),
@@ -194,6 +228,8 @@ BEGIN
            필지 = (SELECT COUNT(*) FROM #p WHERE plat IS NOT NULL),
            이음 = (SELECT COUNT(*) FROM gold.applyhome_link),
            단지에 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE complex_id IS NOT NULL),
-           신축에 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE complex_id IS NULL AND kapt_code IS NOT NULL);
+           신축에 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE complex_id IS NULL AND kapt_code IS NOT NULL),
+           오피스텔길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'오피스텔·도시형%'),
+           무순위길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'무순위·잔여%');
 END
 GO
