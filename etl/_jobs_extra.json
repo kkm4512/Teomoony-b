@@ -1154,5 +1154,29 @@
     "/api/complexes/near?lat=37.5&lng=127.03",
     "/api/applyhome/pins?bbox=126.90,37.45,127.15,37.60",
     "/api/complexes/103835/points?kind=subway&key="
+  ],
+  "zs-probe4-par": [
+    "python",
+    "svc_probe.py",
+    "--times",
+    "2",
+    "/api/complexes?q=%EC%9D%80%ED%8F%89&_svc=1",
+    "/api/complexes?q=%EB%9E%98%EB%AF%B8%EC%95%88&_svc=1",
+    "/api/complexes?q=%EC%A1%B0%EC%9B%90&_svc=1",
+    "/api/complexes?q=xyz%EA%B6%81&_svc=1",
+    "/api/complexes?q=%EC%84%9C%EA%B5%90%EB%8F%99+445&_svc=1"
+  ],
+  "zs-explain": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "explain (analyze, timing off, summary on)\nWITH am AS (SELECT complex_id, min(plat_plc collate svc.ko_ci) AS b FROM svc.lyr_sg_atch WHERE plat_plc ILIKE '%은평%' GROUP BY complex_id),\ng AS (SELECT complex_id FROM svc.lyr_sg_cmap WHERE (complex_nm ILIKE '%은평%' OR rep_plat_plc ILIKE '%은평%' OR rep_road_addr ILIKE '%은평%') UNION SELECT complex_id FROM am)\nSELECT v.complex_id FROM svc.lyr_sg_cmap v LEFT JOIN am ON am.complex_id = v.complex_id WHERE v.complex_id IN (SELECT complex_id FROM g)\nORDER BY v.dong_cnt DESC NULLS LAST, v.pnu_cnt DESC NULLS LAST, v.complex_id LIMIT 51",
+    "explain (analyze, timing off, summary on)\nWITH am AS MATERIALIZED (SELECT complex_id, min(plat_plc collate svc.ko_ci) AS b FROM svc.lyr_sg_atch WHERE plat_plc ILIKE '%은평%' GROUP BY complex_id)\nSELECT v.complex_id FROM svc.lyr_sg_cmap v LEFT JOIN am ON am.complex_id = v.complex_id\nWHERE (v.complex_nm ILIKE '%은평%' OR v.rep_plat_plc ILIKE '%은평%' OR v.rep_road_addr ILIKE '%은평%' OR am.complex_id IS NOT NULL)\nORDER BY v.dong_cnt DESC NULLS LAST, v.pnu_cnt DESC NULLS LAST, v.complex_id LIMIT 51"
+  ],
+  "zl-cmap-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "sg_cmap"
   ]
 }

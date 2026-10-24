@@ -173,8 +173,11 @@ SUGG = [
    [("complex_id", "int PRIMARY KEY"), ("complex_nm", "text"), ("grouping_rule", "text"), ("has_recap", "boolean"), ("rep_jibun", "text"),
     ("rep_plat_plc", "text"), ("rep_road_addr", "text"), ("lawd_nm", "text"), ("dong_cnt", "int"), ("pnu_cnt", "int"), ("parcel_hit", "int"),
     ("hhld_cnt_sum", "int"), ("tot_area_sum", D), ("oldest_use_apr", "text"), ("jiga_avg", D), ("centroid_lat", D), ("centroid_lng", D),
-    ("rep_pnu", "text"), ("폐쇄", "int"), ("실거래이름", "text")],
-   [TRGM("complex_nm"), TRGM("rep_plat_plc"), TRGM("rep_road_addr"), "(dong_cnt DESC NULLS LAST, pnu_cnt DESC NULLS LAST, complex_id)", "(left(rep_pnu, 10))"]),
+    ("rep_pnu", "text"), ("폐쇄", "int"), ("실거래이름", "text"), ("s_all", "text")],
+   # s_all = 이름 · 지번주소 · 도로명을 한 칸에(소문자) — 두 글자 검색은 trigram 이 못 받쳐 57만 줄을 훑는데, ILIKE 세 칸보다 LIKE 한 칸이 몇 배 빠르다
+   #   (사이에 chr(1) — 검색어에 그 글자가 없으니 칸을 넘어 걸리지 않는다). 10-25 '은평' 2.6초(3초 제한 턱밑).
+   [TRGM("s_all"), "(dong_cnt DESC NULLS LAST, pnu_cnt DESC NULLS LAST, complex_id)", "(left(rep_pnu, 10))"],
+   ["UPDATE {t} SET s_all = lower(coalesce(complex_nm, '') || chr(1) || coalesce(rep_plat_plc, '') || chr(1) || coalesce(rep_road_addr, ''))"]),
   # 부속지번(건축물대장 관련지번) → 단지
   ("sg_atch", None, U + """SELECT cb.complex_id, a.plat_plc FROM silver.bld_atch_jibun a JOIN gold.complex_bld cb ON cb.mgm_bldrgst_pk = a.mgm_bldrgst_pk
                              WHERE a.is_current = 1""",
