@@ -467,5 +467,14 @@
   "ae-schoolgroup-par": [
     "python",
     "load_school_group.py"
+  ],
+  "ad-schoolinfo-3y-par": [
+    "python",
+    "load_schoolinfo.py",
+    "--stat-only",
+    "--yr",
+    "2024",
+    "2025",
+    "2026"
   ]
 }
