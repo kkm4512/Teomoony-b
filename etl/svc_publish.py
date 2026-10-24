@@ -12,6 +12,7 @@
 ★ 비밀번호 · 키는 화면 · 로그에 안 찍는다.
 """
 import argparse, gzip, hashlib, json, os, re, sys, threading, time, urllib.request, urllib.error
+from datetime import timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pymssql, psycopg
 
@@ -101,6 +102,11 @@ def changed_ids(ms, since):
         UNION SELECT cb.complex_id FROM silver.bld_title t JOIN gold.complex_bld cb ON cb.mgm_bldrgst_pk = t.mgm_bldrgst_pk WHERE t.valid_from > @s
         UNION SELECT cb.complex_id FROM gold.bld_violation v JOIN gold.complex_bld cb ON cb.mgm_bldrgst_pk = v.mgm_bldrgst_pk WHERE v.만든때 > @s
         UNION SELECT cp.complex_id FROM gold.change_log g JOIN gold.complex_pnu cp ON cp.pnu = g.키 WHERE g.자료 = N'토지특성' AND g.만든때 > @s
+        /* 10-25: 지역 단위 적재(건축물대장 · 인허가 · 공시가격 …)가 끝난 곳 — 시각 칸이 없는 표가 많아서 적재 기록(meta.ingest_run)으로.
+           scope_key '41135/10900' = 그 법정동 · '41135/00000' = 그 시군구 전체. 상세의 '받은자료'(시군구 행 수)도 이때 바뀐다 */
+        UNION SELECT cp.complex_id FROM meta.ingest_run r
+                JOIN gold.complex_pnu cp ON cp.pnu LIKE LEFT(r.scope_key, 5) + CASE WHEN SUBSTRING(r.scope_key, 7, 5) IN ('00000', '') THEN '' ELSE SUBSTRING(r.scope_key, 7, 5) END + '%%'
+               WHERE r.status = 'OK' AND r.row_count > 0 AND r.finished_at > @s AND r.scope_key LIKE '[0-9][0-9][0-9][0-9][0-9]%%'
       ) x WHERE x.complex_id IS NOT NULL""", (since,))
     return [r[0] for r in cur.fetchall()]
 
@@ -164,6 +170,7 @@ def main():
     ap.add_argument("--sample", type=int, default=0, help="full: 무작위 N 단지만(속도 재기)")
     ap.add_argument("--markers", action="store_true", help="지도 마커 표도 다시(hourly 는 늘)")
     ap.add_argument("--markers-only", action="store_true")
+    ap.add_argument("--layers", action="store_true", help="지도 층도(hourly 는 늘)")
     ap.add_argument("--min-hhld", type=int, default=0, help="full: 세대가 이 이상인 단지만(0-1세대 46만 곳은 열릴 때 적재DB 경로)")
     a = ap.parse_args()
     e = env(); ms = ms_conn(e); pg = pg_conn(e)
@@ -178,6 +185,11 @@ def main():
     print(f"[{time.strftime('%H:%M:%S')}] 발행 {pid} · {a.mode} · 단지 목록 {n_list:,}", flush=True)
     if a.markers or a.markers_only or a.mode == "hourly":
         publish_markers(ms, pg)
+    if a.mode == "hourly" or a.layers:   # 10-25 2단계: 지도 층(필지 · 건물 · 법정동 · 행정동 · 닫힌 대장 · 신축) — 원천이 그대로인 층은 건너뜀
+        try:
+            import svc_layers; svc_layers.run(ms, pg)
+        except Exception as ex:
+            pg.rollback(); print(f"  !! 지도 층 실패: {ex}", flush=True)
     if a.markers_only:
         with pg.cursor() as c:
             c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 마커만' WHERE publish_id = %s", (pid,))
@@ -201,7 +213,10 @@ def main():
                 if a.rebuild or (cid, k) not in have: want.append((cid, k))
     else:  # hourly
         since = last_wm or wm.replace(hour=0, minute=0, second=0, microsecond=0)
-        ch = [cid for cid in changed_ids(ms, since.replace(tzinfo=None)) if cid in info]
+        # ★ 10-25: 적재DB 시각은 UTC(컨테이너 SYSDATETIME) · 기준선은 KST — UTC 로 바꿔 넘긴다(전에는 9시간 앞을 기준으로 봐서 바뀐 게 0건이었다)
+        # ★ 이미 서비스DB 에 담긴 단지만 다시 — 안 담긴 곳은 어차피 적재DB 경로가 답하고, 밀린 것(backlog)이 차례로 담는다
+        담김 = {cid for cid, k in have if k == "detail"}
+        ch = [cid for cid in changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None)) if cid in info and cid in 담김]
         want = [(cid, k) for cid in sorted(ch, key=순위) for k in kinds_for(info[cid][0]) if k in ("detail", "history", "usage")]
         밀림 = [(cid, k) for cid in sorted(info, key=순위) for k in kinds_for(info[cid][0]) if (cid, k) not in have][: a.backlog]
         print(f"  바뀐 단지 {len(ch):,}(기준 {since}) · 밀린 것 {len(밀림):,} 더", flush=True)

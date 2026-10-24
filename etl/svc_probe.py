@@ -10,6 +10,17 @@ while i < len(a):
     if a[i] == '--kinds': kinds = a[i + 1].split(','); i += 2
     elif a[i] == '--times': times = int(a[i + 1]); i += 2
     else: ids.append(a[i]); i += 1
+for u0 in [x for x in ids if x.startswith('/')]:   # 경로를 그대로 준 것: 물음표 붙은 지도 요청 등
+    for n in range(times):
+        t = time.time()
+        try:
+            r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5173" + u0, headers={'Accept-Encoding': 'gzip'}), timeout=60)
+            b = r.read()
+            print(f"{int((time.time()-t)*1000):>6}ms {r.status} {r.headers.get('X-Svc') or '-':<6} {len(b):>8}B  {u0}", flush=True)
+        except Exception as e:
+            print(f"   ERR {e}  {u0}", flush=True)
+        time.sleep(0.3)
+ids = [x for x in ids if not x.startswith('/')]
 for cid in ids:
     for k in kinds:
         u = f"http://127.0.0.1:5173/api/complexes/{cid}" + ("" if k == 'detail' else "/" + k)

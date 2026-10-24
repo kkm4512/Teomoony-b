@@ -935,5 +935,75 @@
     "select count(*), sum(length(j.body_gz))/1024/1024 as mb from svc.complex_json j JOIN svc.complex_list l ON l.complex_id = j.complex_id WHERE j.kind = 'detail' AND j.status = 200 AND l.merged_into IS NULL AND l.hhld >= 500 AND left(l.sgg_cd, 2) IN ('11', '28', '41')",
     "select count(*) from svc.complex_list where merged_into is null and hhld >= 500 and left(sgg_cd,2) in ('11','28','41')",
     "select count(*) from svc.complex_list where merged_into is null and hhld >= 20"
+  ],
+  "zs-probe-map-par": [
+    "python",
+    "svc_probe.py",
+    "--times",
+    "2",
+    "/api/complexes/markers?bbox=127.00,37.48,127.08,37.53&limit=400",
+    "/api/lawds?bbox=126.90,37.45,127.15,37.60",
+    "/api/adms?bbox=126.90,37.45,127.15,37.60",
+    "/api/parcels?bbox=127.02,37.495,127.035,37.505",
+    "/api/buildings?bbox=127.02,37.495,127.035,37.505",
+    "/api/newbuilds?bbox=126.90,37.45,127.15,37.60",
+    "/api/newbuilds",
+    "/api/closed/pins?bbox=126.90,37.45,127.15,37.60",
+    "/api/applyhome/pins?bbox=126.90,37.45,127.15,37.60",
+    "/api/suggest?q=%EB%9E%98%EB%AF%B8%EC%95%88",
+    "/api/complexes?q=%EB%9E%98%EB%AF%B8%EC%95%88",
+    "/api/complexes/near?lat=37.5&lng=127.03",
+    "/api/areas/here?lat=37.5&lng=127.03"
+  ],
+  "zq-cols-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cols.sql"
+  ],
+  "zq-cols2-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cols2.sql"
+  ],
+  "zl-layers-par": [
+    "python",
+    "svc_layers.py"
+  ],
+  "sc-map-par": [
+    "python",
+    "svc_compare_map.py",
+    "--n",
+    "12"
+  ],
+  "zd-diff1-par": [
+    "python",
+    "svc_diff.py",
+    "524566",
+    "detail",
+    "jeonse"
+  ],
+  "zd-diff2-par": [
+    "python",
+    "svc_diff.py",
+    "504462",
+    "detail",
+    "거래목록"
+  ],
+  "zd-diff3-par": [
+    "python",
+    "svc_diff.py",
+    "572333",
+    "detail",
+    "받은자료"
+  ],
+  "zq-runs-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_runs.sql"
+  ],
+  "zq-time-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_time.sql"
   ]
 }

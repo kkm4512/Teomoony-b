@@ -10992,3 +10992,14 @@ v_lawd_map 3개 동         5,568ms → 37ms
   svc_mode.json read:true. 상세 41ms~(서비스DB) · 두 번째부터 Redis.
 - **지도 마커도 서비스DB**(svc.complex_marker, 발행 때 통째로 52만 곳 · 41~67초 · 새 표로 바꿔 끼움): bbox 5곳 × limit 400/1000 — 옛 경로와 **바이트까지 같음**. 31~48ms(옛 1.8~2.0초).
   동점 순서를 정했다: 마커 최고가 거래 TOP 1 에 trade_sk DESC · 마커 목록 ORDER BY 에 complex_id(옛 경로도 같이 — 잘릴 때 어느 단지가 남는지가 매번 달랐다).
+- **11-275 (10-25 01:40) 2단계 첫 묶음 — 지도 층을 서비스DB 로**: etl/svc_layers.py 가 적재DB 화면 질의에서 bbox 조건만 뺀 그대로를 svc.lyr_{parcel · building · lawd_geo · lawd_stat · adm · closed · newbuild} 로(새 표 → 바꿔 끼움).
+  필지 97.5만 · 건물 67.3만 · 법정동 경계는 **원천 지문(행 수 · 최근 valid_from/to · 단지 CHECKSUM)이 바뀔 때만** 다시, 나머지는 매시(hourly 발행이 부름).
+  svc.js 지도 핸들러(필지 · 건물 · 법정동 · 행정동 · 닫힌 핀 · 신축 핀) = 옛 처리 코드 그대로(속성 순서 · 형 · 상한 · 잘림). svc_mode.json "map" 으로 따로 켜고 끔 · _svc=1 은 켜기 전 대조용.
+  ★ 형: decimal → float8 · bigint → text(node-mssql 이 문자열로 냄) · bit → boolean. bbox 는 옛 경로처럼 소수 7자리로 반올림(sql.Decimal(12,7)).
+  ★ PG 상자 연산(&&)은 1e-6 만큼 너그러워 경계 밖 필지가 1~2개 더 걸렸다 → GiST 로 후보, 정확한 부등식으로 다시 거름.
+  ★ 동점 순서: 법정동(complex_cnt → lawd_cd) · 닫힌 핀(동수 · 폐쇄일 → site_key) · 신축(거래 · 세대 → kapt_code) 를 옛 경로에도 같이. PG DESC 는 NULLS LAST.
+  대조(svc_compare_map, 층마다 무작위 bbox 12): 6층 전부 같음(필지 · 건물은 3000 에서 잘린 것은 건수만 — 옛 경로가 어느 3000 인지 안 정함).
+  속도(적재 중): 법정동 11.3초 → 0.15초 · 필지 5.8~35초 → 0.2초 · 건물 1.9~7.5초 → 0.06초 · 닫힌 핀 1.3~10초 → 0.08초 · 신축 1.1~4.5초 → 0.02초. **map:true 켬.**
+- **11-276 매시 발행이 바뀐 걸 0건으로 보던 버그**: 적재DB 시각은 UTC(컨테이너 SYSDATETIME) · 기준선은 KST → 9시간 앞을 기준으로 봤다. UTC 로 바꿔 넘김.
+  + 지역 단위 적재(건축물대장 · 인허가 · 공시가격 — 시각 칸 없는 표)는 meta.ingest_run(OK · 행>0 · scope '시군구/법정동')으로 그 지역 단지를 다시. 이미 담긴 단지만.
+  + Redis 미리 채움이 한 번도 안 됐었다(43MB 를 한 질의로 → 3초 제한) → 100곳씩. 지금 1,211곳 · 49MB.
