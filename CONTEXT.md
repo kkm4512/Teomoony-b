@@ -10821,3 +10821,9 @@ v_lawd_map 3개 동         5,568ms → 37ms
 - 337 silver.schoolinfo_move(학교알리미 apiType 10 전·출입: MVIN_SUM · MVT_SUM). load_schoolinfo.py --yr 여럿 · --stat-only · 잡 ad-schoolinfo-3y-par(2024 · 2025 · 2026) → 학생 3,937 · 전출입 3,952 · 실패 0.
 - GET /api/school/:sid?cid= — 위치표준 · 알리미(이은 것만) · 연도별 09 · 학년별(최근 공시 원문 COL_S/C/k) · 전입·전출 · 이 학교를 받는 구역(연계정보) + 구역 안 **세대 있는** 단지 수 · 세대 합(중심점 판정 · 단독처럼 세대 없는 건물 빼 — 처음엔 2,647곳/3,453세대로 섞여 보였다).
 - 교육 탭 학교 카드 '자세히 ›' → #homodal(호 상세와 같은 그릇). 머리 요약은 연도 표가 없을 때만(같은 숫자 두 번 안 보임). 모달 안 구역 줄 → 모달 닫고 지도 경계. 점 고정 클릭은 '자세히' 에서 시작하면 무시.
+
+### 11-257 유치원 · 어린이집 · 상권 상세 모달 (2026-10-24 10:44 사장님 "자세히 볼 데이터가 있으면 받아오고 모달로")
+- 유치원: 338 silver.kinder_info(유치원알리미 항목 원문 11종 — basicInfo2 · building · classArea · teachersInfo · yearOfWork · lessonDay · schoolBus · safetyEdu · schoolMeal · environmentHygiene · afterSchoolPresent). load_kinder_info.py · 잡 af-kinderinfo-par → 9,064줄 · 실패 0. 칸 정의 = 유치원알리미 OPENAPI 각 항목 페이지 출력항목. 원문이 단위를 달고 옴('5개' · '323㎡' · '2009년') → 글자 그대로. 대표자 · 원장 이름은 내보내지 않음.
+- 어린이집: 이미 받은 raw_json(cpmsapi030) — 연령별 반 · 아동(CLASS/CHILD_CNT_00~05 · M2 영아혼합 · M3 유아혼합 · SP 특수 · M5 는 목록에 없어 '원문 M5'), 교직원(EM_CNT_A1 원장 … A10 간호조무사 — data.go.kr 15101154 출력 목록 순서 = 원문 칸 순서), 근속(EM_CNT_0Y~6Y · 값이 % 합 100), 입소대기(EW_CNT_00~05 · M6). 직종별 합 ≠ 총계일 수 있음(원문 그대로 · 화면에 적음).
+- 상권: GET /api/complexes/:id/poi-list?life=… — 상권 탭 생활 편의 묶음 '목록 ›' → 항목마다 가까운 60곳 + 1km · 500m 전체 수(한 항목이 다른 항목을 밀어내지 않게 PARTITION).
+- GET /api/kinder/:code · /api/childcare/:st (cid 주면 거리). 카드 '자세히 ›' → #homodal. 점 고정 클릭은 버튼에서 시작하면 무시.
