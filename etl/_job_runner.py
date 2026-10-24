@@ -560,6 +560,14 @@ def handle(path, quiet=False):
     if rc == 0:
         요약걸기(name)
         범위걸기(name)
+        if "landchar" in name:      # 2026-10-24(347): 토지특성을 새로 받았으면 변경 로그를 다시 뽑는다
+            try:
+                q = os.path.join(QDIR, "zl-changelog-par.job")
+                if not os.path.exists(q):
+                    with open(q, "w", encoding="utf-8") as f:
+                        f.write(f"{now()} {name} 뒤 — 토지특성 변경 로그 다시\n")
+            except Exception as e:
+                print(f"         (zl-changelog-par 를 못 걸었다: {e})")
     if not quiet:
         write_status(state="idle", last=name, result=f"rc={rc}",
                      sec=round(took, 1), log=os.path.basename(logpath),

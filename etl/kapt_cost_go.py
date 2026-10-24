@@ -20,6 +20,7 @@ def main():
     ap.add_argument("--to", dest="ym_to")
     ap.add_argument("--sgg", nargs="*", default=None)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--rps", type=float, default=10.0, help="구 하나(프로세스)의 초당 호출 수 — 합은 workers × rps")
     ap.add_argument("--threads", type=int, default=8, help="구 하나 안에서 오퍼레이션을 같이 부를 스레드 수(load_kapt_cost --threads)")
     a = ap.parse_args()
     sys.path.insert(0, HERE)
@@ -31,7 +32,7 @@ def main():
     t0 = time.time(); bad = []
     def one(sgg):
         st = time.time()
-        p = subprocess.run([sys.executable, os.path.join(HERE, "load_kapt_cost.py"), "--sgg", sgg, "--threads", str(a.threads)] + when,
+        p = subprocess.run([sys.executable, os.path.join(HERE, "load_kapt_cost.py"), "--sgg", sgg, "--threads", str(a.threads), "--rps", str(a.rps)] + when,
                            cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace")
         out = ((p.stdout or "") + (p.stderr or "")).strip().splitlines()
         with lock:

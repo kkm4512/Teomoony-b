@@ -32,6 +32,10 @@ import requests
 import pymssql
 
 import progress
+from _rate import 조절기
+# ★ 2026-10-24 17:05: 27구 × 16스레드(동시 432)로 과거 관리비를 받자 K-apt 쪽이 HTTP_ERROR(04)로 막았다(실거래 API 는 멀쩡 — 이 서비스만).
+#   속도를 프로세스마다 맞춘다(--rps · 막히면 절반 + 쉼). 구 여러 개를 동시에 돌리면 합이 '구 수 × rps' 다.
+조절 = 조절기(10, 20, 60)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV  = os.path.join(HERE, "..", ".env")
@@ -95,6 +99,7 @@ def get(url, key, params, retries=4):
     """에러 바디(HTTP 200)를 실패로 다룬다. load_kapt.get() 과 같은 이유."""
     p = dict(params); p["serviceKey"] = key
     for a in range(retries):
+        조절.기다림()
         try:
             r = requests.get(url, params=p, timeout=40)
             if r.status_code == 200:
@@ -107,11 +112,14 @@ def get(url, key, params, retries=4):
                     if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in json.dumps(j) or '"22"' in json.dumps(j):
                         print("\n★ data.go.kr 하루 호출 한도 초과 — 여기서 멈춥니다(받은 것은 그대로)", flush=True)
                         os._exit(3)
+                    조절.실패()          # HTTP_ERROR(04) — K-apt 쪽이 버거워한다. 다 같이 쉰다
                     time.sleep(1.5 * (a + 1))
                     continue
+                조절.성공()
                 return j
+            조절.실패()
         except Exception:
-            pass
+            조절.실패()
         time.sleep(1.0 * (a + 1))
     return None
 
@@ -157,7 +165,10 @@ def main():
     ap.add_argument("--svc", action="append", choices=["CMN", "IND", "REP"],
                     help="서비스만 골라 적재 (트래픽을 나눠 돌릴 때)")
     ap.add_argument("--threads", type=int, default=8, help="한 단지·한 달의 오퍼레이션을 같이 부를 스레드 수(2026-10-24)")
+    ap.add_argument("--rps", type=float, default=10.0, help="이 프로세스의 초당 호출 수 상한(처음 값 · 스스로 올리고 내림)")
     args = ap.parse_args()
+    global 조절
+    조절 = 조절기(args.rps, args.rps * 2, 60)
 
     env = load_env(ENV)
     key = env.get("DATA_GO_KR_KEY")

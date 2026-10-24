@@ -112,7 +112,8 @@ def wkt(mp):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sgg", nargs="+", required=True, help="시군구코드 5자리")
+    ap.add_argument("--sgg", nargs="+", help="시군구코드 5자리")
+    ap.add_argument("--all", action="store_true", help="전국 시군구 전부(meta.lawd_code) — 2026-10-24 전국 넓히기: 점 자료의 시군구를 가르려면 경계가 먼저다")
     ap.add_argument("--lawd", nargs="*", help="법정동코드 10자리로 좁히기")
     ap.add_argument("--no-geom", action="store_true")
     args = ap.parse_args()
@@ -135,6 +136,13 @@ def main():
                            database=env.get("DB_NAME", "Teomoony"),
                            charset="UTF-8", autocommit=False)
     cur = conn.cursor()
+    if args.all:
+        cur.execute("""SELECT DISTINCT sgg_cd FROM meta.lawd_code
+                        WHERE is_abolished = 0 AND emd_nm IS NOT NULL AND sgg_cd NOT LIKE '__000' ORDER BY sgg_cd""")
+        args.sgg = [r[0] for r in cur.fetchall()]
+        print(f"  전국 시군구 {len(args.sgg)}곳", flush=True)
+    if not args.sgg:
+        sys.exit("--sgg 또는 --all")
     want = set(args.lawd or [])
     total_new = 0
     실패 = []

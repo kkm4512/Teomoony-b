@@ -640,8 +640,59 @@
     "--to",
     "202604",
     "--workers",
-    "27",
+    "6",
     "--threads",
+    "8",
+    "--rps",
+    "10"
+  ],
+  "zk-kill-kaptcost": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'kapt_cost' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "pa-pilot-target": [
+    "cmd",
+    "/c",
+    "python run_plan.py add --sgg 41135 --ops base,ext,exar,pms && python run_plan.py add --sgg 27260 --ops base,ext,exar,pms && python run_plan.py plan"
+  ],
+  "pb-pilot-ledger-par": [
+    "python",
+    "run_plan.py",
+    "go",
+    "--retry",
+    "--workers",
+    "12"
+  ],
+  "pc-pilot-rtms-par": [
+    "python",
+    "rtms_go.py",
+    "--sgg",
+    "41135",
+    "27260",
+    "--from",
+    "200601",
+    "--to",
+    "202610",
+    "--workers",
     "16"
+  ],
+  "pd-pilot-lawdgeom-par": [
+    "python",
+    "load_lawd_geom.py",
+    "--sgg",
+    "41135",
+    "27260"
+  ],
+  "pe-lawdgeom-all-par": [
+    "python",
+    "load_lawd_geom.py",
+    "--all"
+  ],
+  "zl-changelog-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\347_change_log_run.sql",
+    "347_change_log_run"
   ]
 }
