@@ -16,6 +16,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--months", type=int)
     ap.add_argument("--ym", action="append")
+    ap.add_argument("--from", dest="ym_from", help="YYYYMM — 과거 이력(2026-10-24 사장님 '관리비 전부'): 이 달부터 오래된 순으로")
+    ap.add_argument("--to", dest="ym_to")
     ap.add_argument("--sgg", nargs="*", default=None)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--threads", type=int, default=8, help="구 하나 안에서 오퍼레이션을 같이 부를 스레드 수(load_kapt_cost --threads)")
@@ -23,7 +25,8 @@ def main():
     sys.path.insert(0, HERE)
     from _targets import 대상시군구
     gus = list(a.sgg) if a.sgg else 대상시군구()   # 2026-10-24: 서울 25구 목록 → 적재 대상 시군구(meta.v_target_sgg)
-    when = (["--months", str(a.months)] if a.months else []) + sum([["--ym", y] for y in (a.ym or [])], [])
+    when = (["--months", str(a.months)] if a.months else []) + sum([["--ym", y] for y in (a.ym or [])], []) \
+         + (["--from", a.ym_from, "--to", a.ym_to] if a.ym_from and a.ym_to else [])
     print(f"관리비 · {' '.join(when)} · {len(gus)}구 · 스레드 {a.workers}", flush=True)
     t0 = time.time(); bad = []
     def one(sgg):

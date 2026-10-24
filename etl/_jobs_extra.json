@@ -591,5 +591,57 @@
   "cf-hira-all-par": [
     "python",
     "load_hira.py"
+  ],
+  "cg-kaptcost-anyang-retry-par": [
+    "python",
+    "kapt_cost_go.py",
+    "--sgg",
+    "41171",
+    "41173",
+    "--ym",
+    "202608",
+    "--ym",
+    "202609",
+    "--workers",
+    "2",
+    "--threads",
+    "8"
+  ],
+  "zm-meminfo": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "'PC RAM GB: ' + [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1); 'docker MemTotal GB: ' + [math]::Round([double](docker info --format '{{.MemTotal}}')/1GB,1); 'CPU: ' + (Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfLogicalProcessors -Sum).Sum; if (Test-Path $env:USERPROFILE\\.wslconfig) { 'wslconfig:'; Get-Content $env:USERPROFILE\\.wslconfig } else { 'wslconfig 없음' }"
+  ],
+  "zm-db-recreate": [
+    "cmd",
+    "/c",
+    "cd /d C:\\Project\\Teomoony && docker compose --env-file .env -f deploy\\docker-compose.yml up -d && timeout /t 40 /nobreak >nul && docker exec teomoony-mssql sh -c \"cat /proc/meminfo | head -1\""
+  ],
+  "ch-kaptcost-hist-test-par": [
+    "python",
+    "kapt_cost_go.py",
+    "--sgg",
+    "11305",
+    "--from",
+    "201412",
+    "--to",
+    "201502",
+    "--workers",
+    "1",
+    "--threads",
+    "16"
+  ],
+  "ci-kaptcost-hist-par": [
+    "python",
+    "kapt_cost_go.py",
+    "--from",
+    "201401",
+    "--to",
+    "202604",
+    "--workers",
+    "27",
+    "--threads",
+    "16"
   ]
 }

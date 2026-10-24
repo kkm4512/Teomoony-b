@@ -221,6 +221,42 @@ BEGIN
            AND MIN(CASE WHEN LEN(c.oldest_use_apr) = 8 THEN TRY_CONVERT(DATE, c.oldest_use_apr) END)
                >= DATEADD(YEAR, -5, TRY_CONVERT(DATE, REPLACE(p.rcrit_pblanc_de, '-', '')))
            AND (p.tot_suply IS NULL OR MIN(c.hhld_cnt_sum) >= p.tot_suply);
+        /* 여덟째 (2026-10-24 16:53 사장님 "확실한거면 넣어", 11-264): **공고 지번이 지금 지적도에 없는 곳(사업 전 지번)** — 서울 정비계획을 다리로.
+           ① 공고 지번 = 서울 정비계획(301)의 대표 지번(PNU 정확히 같음) ② 그 계획의 정비구역(redev_plan_link) 안에 필지가 절반 이상 든 단지
+           ③ 그 단지 세대 = 정비계획 공급세대(정확히 같음) · 세대 ≥ 공고 공급 · 사용승인이 입주예정월 ±6개월 ④ 후보 하나.
+           시험(16:31): 30건 · 이름 대조 30/30 같은 단지(남구로역 동일 센타시아 · 자양 하늘채 베르 …). 이름은 안 본다. */
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT p.house_manage_no, p.pblanc_no, MIN(c.complex_id),
+               (SELECT TOP 1 ck.kapt_code FROM gold.complex_kapt ck WHERE ck.complex_id = MIN(c.complex_id)),
+               N'사업 전 지번 = 정비계획 대표 지번 · 그 구역 단지 · 세대 = 계획 공급세대 · 입주월±6', 0
+          FROM silver.applyhome_pblanc p
+          JOIN silver.seoul_redev_plan r ON r.pnu = p.pnu
+          JOIN gold.redev_plan_link rl ON rl.basic_info_seq = r.basic_info_seq
+          JOIN gold.complex_redev_hit h ON h.present_sn = rl.present_sn AND h.xarea >= 0.5 * h.parea
+          JOIN gold.complex c ON c.complex_id = h.complex_id AND c.is_active = 1 AND c.merged_into IS NULL
+           AND c.hhld_cnt_sum = r.공급세대 AND c.hhld_cnt_sum >= ISNULL(p.tot_suply, 0) AND LEN(c.latest_use_apr) = 8
+           AND ABS(DATEDIFF(MONTH, TRY_CONVERT(DATE, p.mvn_prearnge_ym + '01'), TRY_CONVERT(DATE, c.latest_use_apr))) <= 6
+         WHERE p.pnu IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel cp WHERE cp.pnu = p.pnu AND cp.is_current = 1)
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
+         GROUP BY p.house_manage_no, p.pblanc_no HAVING COUNT(DISTINCT c.complex_id) = 1;
+        /* 아홉째 (2026-10-24, 11-264): 사업 전 지번 · **본 공고(APT · 공공지원민간임대 · 도시형/오피스텔)이고 공급 30세대 이상** —
+           같은 법정동 · 사용승인이 입주예정월 ±4개월 · **단지 세대 = 공고 공급세대(정확히 같음)** · 후보 하나.
+           ★ '세대 ≥ 공급' 만으로는 틀린다(시험: DMC파인시티자이 → DMC SK VIEW · 관악센트씨엘 → 봉천 행복주택). 같은 수여야 한다.
+           ★ 무순위 · 임의공급(4~12세대)은 같은 동 빌라에 우연히 같은 수가 있어 뺀다(리츠하우스 · 미라벨) — 그건 일곱째(형제)로 따라온다.
+           시험: 12건 · 이름 대조 12/12(고덕강일 제일풍경채 · 상도 푸르지오 클라베뉴 · 안양리버자이르네 …). */
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT p.house_manage_no, p.pblanc_no, MIN(c.complex_id),
+               (SELECT TOP 1 ck.kapt_code FROM gold.complex_kapt ck WHERE ck.complex_id = MIN(c.complex_id)),
+               N'사업 전 지번 · 본 공고 · 같은 법정동 · 단지 세대 = 공급세대 · 입주월±4 · 후보 1', 0
+          FROM silver.applyhome_pblanc p
+          JOIN gold.complex c ON c.is_active = 1 AND c.merged_into IS NULL AND c.hhld_cnt_sum = p.tot_suply
+           AND c.sigungu_cd + c.bjdong_cd = LEFT(p.pnu, 10) AND LEN(c.latest_use_apr) = 8
+           AND ABS(DATEDIFF(MONTH, TRY_CONVERT(DATE, p.mvn_prearnge_ym + '01'), TRY_CONVERT(DATE, c.latest_use_apr))) <= 4
+         WHERE p.pnu IS NOT NULL AND p.공고종류 IN ('APT', 'PBLPVT', 'URBTY') AND p.tot_suply >= 30
+           AND NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel cp WHERE cp.pnu = p.pnu AND cp.is_current = 1)
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no AND l.pblanc_no = p.pblanc_no)
+         GROUP BY p.house_manage_no, p.pblanc_no HAVING COUNT(DISTINCT c.complex_id) = 1;
         /* 일곱째 (2026-10-23 22:25 사장님 "이런 규칙이 괜찮아 보여", 11-249): **같은 공고 지번의 다른 공고가 이미 이어진 곳**.
            청약홈은 무순위·재공급·임의공급마다 관리번호를 새로 붙여, 본 분양은 이어졌는데 뒤 공고만 남는 일이 있다(강변역 센트럴 아이파크 2026.09 불법행위 재공급).
            ① 그 지번에서 이미 이어진 공고들이 가리키는 곳이 **하나**(단지 또는 대장 없는 K-apt)
@@ -266,6 +302,8 @@ BEGIN
            신축에 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE complex_id IS NULL AND kapt_code IS NOT NULL),
            오피스텔길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'오피스텔·도시형%'),
            무순위길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'무순위·잔여%'),
-           형제길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'같은 공고 지번의 다른 공고%');
+           형제길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'같은 공고 지번의 다른 공고%'),
+           정비계획길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'사업 전 지번 = 정비계획%'),
+           세대같음길 = (SELECT COUNT(*) FROM gold.applyhome_link WHERE 근거 LIKE N'사업 전 지번 · 본 공고%');
 END
 GO

@@ -25,7 +25,7 @@ load_kapt_cost - 관리비 3개 서비스를 silver.kapt_cost 에 적재
   * 키는 kaptCode 다. 정식 단지(ROOT_PK)와는 코드로 안 붙는다(정책.md 4장).
     관리비는 K-apt 축 위에만 산다.
 """
-import argparse, os, sys, time
+import argparse, json, os, sys, time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 import requests
@@ -103,6 +103,10 @@ def get(url, key, params, retries=4):
                 except Exception:
                     return None
                 if isinstance(j, dict) and "OpenAPI_ServiceResponse" in j:
+                    # ★ 하루 호출 한도를 넘으면 계속 두드려도 다 실패다 — 받은 데까지 두고 **멈춘다**(다음 날 같은 명령이 빈 것만 채운다)
+                    if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in json.dumps(j) or '"22"' in json.dumps(j):
+                        print("\n★ data.go.kr 하루 호출 한도 초과 — 여기서 멈춥니다(받은 것은 그대로)", flush=True)
+                        os._exit(3)
                     time.sleep(1.5 * (a + 1))
                     continue
                 return j
@@ -221,6 +225,7 @@ def main():
 
     풀 = ThreadPoolExecutor(max_workers=max(1, args.threads))
     ins = upd = same = empty = fail = unknown = 0
+    allzero = 0
     seen_unknown = set()
     for ym in yms:
         for code in codes:
@@ -248,6 +253,12 @@ def main():
                         seen_unknown.add((op, k))
             pg.tick(f"{ym} {code}  항목 {len(rows)}")
             if broke and not rows:
+                continue
+            # ★ 2026-10-24(과거 이력 받기 전 실측): **공개 전 달은 항목이 전부 0 으로 온다**(올림픽선수기자촌 2014.01 인건비 9칸 모두 0 · 2015.01 부터 값).
+            #   0 을 그대로 넣으면 '관리비 0원' 이라는 거짓이 된다. 한 단지·한 달의 31 오퍼레이션 값이 **모두 0** 이면 '자료 없음' 으로 본다.
+            #   (한 항목만 0 인 것은 진짜 0 일 수 있다 — 개별난방 단지의 난방비 등 — 그대로 둔다.)
+            if rows and all(r[3] == 0 for r in rows):
+                allzero += 1
                 continue
             for svc, op, fld, amt in rows:
                 cur.execute("""
@@ -281,7 +292,7 @@ OUTPUT $action;""", (code, ym, svc, op, fld, amt))
                     LEFT JOIN meta.kapt_cost_item d ON d.op=c.op AND d.fld=c.fld
                    WHERE d.op IS NULL ORDER BY c.op, c.fld""")
     miss = cur.fetchall()
-    print(f"\n신규 {ins:,} | 변경 {upd:,} | 동일 {same:,} | 데이터없음 {empty:,} | 호출실패 {fail:,}")
+    print(f"\n신규 {ins:,} | 변경 {upd:,} | 동일 {same:,} | 데이터없음 {empty:,} | 전부0(공개 전 달) {allzero:,} | 호출실패 {fail:,}")
     if miss:
         print(f"\n사전(meta.kapt_cost_item)에 없는 필드 {len(miss)}개 — 뜻을 확인해 추가할 것:")
         for op, fld in miss:
