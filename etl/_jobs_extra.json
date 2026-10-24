@@ -640,11 +640,11 @@
     "--to",
     "202604",
     "--workers",
-    "6",
+    "4",
     "--threads",
     "8",
     "--rps",
-    "10"
+    "6"
   ],
   "zk-kill-kaptcost": [
     "powershell",
@@ -744,5 +744,11 @@
     "2",
     "--max-rps",
     "3"
+  ],
+  "zk-kill-hub": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'load_hub' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
   ]
 }

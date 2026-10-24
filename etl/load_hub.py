@@ -57,10 +57,21 @@ CREATE TABLE hub.t{code} (
   {defs},
   행해시 BINARY(32) NOT NULL,
   처음월 CHAR(6) NOT NULL,
-  마지막월 CHAR(6) NOT NULL
+  마지막월 CHAR(6) NULL          -- 마지막으로 보인 달 · NULL = 가장 최근에 넣은 달에도 있음(지금 줄)
 );""")
-    cur.execute(f"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_hub_t{code}_hash' AND object_id = OBJECT_ID('hub.t{code}'))
-CREATE UNIQUE INDEX ix_hub_t{code}_hash ON hub.t{code} (행해시) WITH (IGNORE_DUP_KEY = OFF);""")
+    # 2026-10-24 19:50 옮기기: 처음 만든 표는 '매달 모든 줄의 마지막월을 고쳐 쓰는' 방식(NOT NULL + 해시 유일)이었다 —
+    #  649만 줄 표에서 한 달에 17분. 사라진 줄만 닫는 방식으로 바꾼다. 가장 최근 달까지 있던 줄 = NULL.
+    cur.execute(f"""IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('hub.t{code}') AND name = N'마지막월' AND is_nullable = 0)
+BEGIN
+  IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_hub_t{code}_key' AND object_id = OBJECT_ID('hub.t{code}')) DROP INDEX ix_hub_t{code}_key ON hub.t{code};
+  IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_hub_t{code}_hash' AND object_id = OBJECT_ID('hub.t{code}')) DROP INDEX ix_hub_t{code}_hash ON hub.t{code};
+  ALTER TABLE hub.t{code} ALTER COLUMN 마지막월 CHAR(6) NULL;
+  EXEC(N'UPDATE hub.t{code} SET 마지막월 = NULL WHERE 마지막월 = (SELECT MAX(월) FROM hub.month_done WHERE code = ''{code}'')');
+END""")
+    cur.execute(f"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ux_hub_t{code}_now' AND object_id = OBJECT_ID('hub.t{code}'))
+CREATE UNIQUE INDEX ux_hub_t{code}_now ON hub.t{code} (행해시) WHERE 마지막월 IS NULL;""")
+    cur.execute(f"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_hub_t{code}_h' AND object_id = OBJECT_ID('hub.t{code}'))
+CREATE INDEX ix_hub_t{code}_h ON hub.t{code} (행해시) INCLUDE (처음월, 마지막월);""")
     cur.execute(f"""IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_hub_t{code}_key' AND object_id = OBJECT_ID('hub.t{code}'))
 CREATE INDEX ix_hub_t{code}_key ON hub.t{code} ([{cols[0]}]) INCLUDE (처음월, 마지막월);""")
     cur.execute(f"IF OBJECT_ID('hub.s{code}') IS NOT NULL DROP TABLE hub.s{code};")   # 받침표(파생 · 매번 새로)
@@ -104,23 +115,26 @@ def 넣기(conn, code, month, zpath):
     os.remove(txt)
     hcols = [c for c in cols if c != "생성_일자"]
     hexpr = "HASHBYTES('SHA2_256', CAST(CONCAT_WS(N'|', " + ", ".join(f"ISNULL(CAST([{c}] AS NVARCHAR(4000)), N'')" for c in hcols) + ") AS VARBINARY(MAX)))"
-    # 이미 있는 줄: 마지막월만 늘린다(이전 달까지 이어져 있던 줄만 — 끊겼다 다시 나타난 줄은 새로 시작)
+    # ★ 2026-10-24 19:50: 매달 모든 줄을 고쳐 쓰지 않는다(649만 줄에 17분). 지금 줄(마지막월 NULL) 중 이번 달에 **없는 것만 닫고**(마지막월 = 앞 달),
+    #   이번 달에 처음 보이는 해시만 새 줄로 넣는다. 해시는 받침표에서 두 번 셈 — 넓은 칸을 tempdb 로 옮기지 않으려고.
     cur.execute(f"""IF OBJECT_ID('tempdb..#h') IS NOT NULL DROP TABLE #h;
-SELECT h = {hexpr}, {", ".join(f"[{c}] = CAST([{c}] AS NVARCHAR(2000))" for c in cols)} INTO #h FROM hub.s{code};
-CREATE INDEX x ON #h (h);
+SELECT DISTINCT h = {hexpr} INTO #h FROM hub.s{code};
+CREATE UNIQUE CLUSTERED INDEX x ON #h (h);
 DECLARE @prev CHAR(6) = CONVERT(CHAR(6), DATEADD(MONTH, -1, CAST(%s + '01' AS DATE)), 112);
-UPDATE t SET 마지막월 = %s FROM hub.t{code} t JOIN (SELECT DISTINCT h FROM #h) s ON s.h = t.행해시 WHERE t.마지막월 = @prev OR t.마지막월 = %s;
+UPDATE t SET 마지막월 = @prev FROM hub.t{code} t
+ WHERE t.마지막월 IS NULL AND NOT EXISTS (SELECT 1 FROM #h s WHERE s.h = t.행해시);
+DECLARE @닫음 BIGINT = @@ROWCOUNT;
 INSERT hub.t{code} ({", ".join(f"[{c}]" for c in cols)}, 행해시, 처음월, 마지막월)
-SELECT {", ".join(f"MIN(s.[{c}])" for c in cols)}, s.h, %s, %s FROM #h s
- WHERE NOT EXISTS (SELECT 1 FROM hub.t{code} t WHERE t.행해시 = s.h)
- GROUP BY s.h;
-SELECT 새줄 = @@ROWCOUNT;""", (month, month, month, month, month))
-    새 = cur.fetchone()[0]
+SELECT {", ".join(f"[{c}]" for c in cols)}, h, %s, NULL
+  FROM (SELECT *, h = {hexpr}, rn = ROW_NUMBER() OVER (PARTITION BY {hexpr} ORDER BY (SELECT 0)) FROM hub.s{code}) s
+ WHERE s.rn = 1 AND NOT EXISTS (SELECT 1 FROM hub.t{code} t WHERE t.행해시 = s.h AND t.마지막월 IS NULL);
+SELECT 새줄 = @@ROWCOUNT, 닫음 = @닫음;""", (month, month))
+    새, 닫음 = cur.fetchone()
     cur.execute(f"DROP TABLE hub.s{code}")
     cur.execute("""IF OBJECT_ID('hub.month_done') IS NULL CREATE TABLE hub.month_done (code CHAR(4) NOT NULL, 월 CHAR(6) NOT NULL, 줄 BIGINT, 새줄 BIGINT, 초 INT, 넣은때 DATETIME2(0) DEFAULT SYSDATETIME(), CONSTRAINT pk_hub_month_done PRIMARY KEY (code, 월));
                    INSERT hub.month_done (code, 월, 줄, 새줄, 초) VALUES (%s, %s, %s, %s, %s);""", (code, month, n, 새, int(time.time() - t0)))
     conn.commit()
-    print(f"  ✔ [{ts()}] {code} {spec['분류']} {spec['이름']} {month}: {n:,}줄 · 새 버전 {새:,} · {time.time()-t0:.0f}초", flush=True)
+    print(f"  ✔ [{ts()}] {code} {spec['분류']} {spec['이름']} {month}: {n:,}줄 · 새 버전 {새:,} · 사라짐 {닫음:,} · {time.time()-t0:.0f}초", flush=True)
 
 
 def 표있나(cur, name):
