@@ -1027,7 +1027,7 @@
     "python",
     "svc_compare_sugg.py",
     "--n",
-    "150"
+    "100"
   ],
   "zq-cols3-par": [
     "python",
@@ -1065,5 +1065,21 @@
     "svc_layers.py",
     "--only",
     "sg_semas"
+  ],
+  "zs-svc-q4": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select l.complex_id, l.hhld from svc.complex_list l where l.merged_into is null and not exists (select 1 from svc.complex_json j where j.complex_id=l.complex_id) order by l.complex_id desc limit 3"
+  ],
+  "zs-probe2-par": [
+    "python",
+    "svc_probe.py",
+    "598859",
+    "598857",
+    "--kinds",
+    "detail,geo",
+    "--times",
+    "2"
   ]
 }
