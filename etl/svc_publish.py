@@ -210,6 +210,7 @@ def main():
         c.execute("SELECT complex_id, hhld, sgg_cd FROM svc.complex_list WHERE merged_into IS NULL")
         info = {r[0]: (r[1], r[2]) for r in c.fetchall()}
         c.execute("SELECT complex_id, kind FROM svc.complex_json"); have = {(r[0], r[1]) for r in c.fetchall()}
+    pg.commit()   # 같은 이유(아래 적재DB 질의 · 받기 동안 열어 두지 않게)
     def 순위(cid):   # 수도권(서울 · 인천 · 경기) 큰 단지부터
         h, s = info.get(cid, (0, None)); return (0 if (s or '')[:2] in ('11', '28', '41') else 1, -(h or 0), cid)
     want = []
@@ -241,6 +242,7 @@ def main():
     with pg.cursor() as c:
         c.execute("SELECT complex_id, kind, sha FROM svc.complex_json WHERE complex_id = ANY(%s)", (list({w[0] for w in want}) or [0],))
         old = {(r[0], r[1]): r[2] for r in c.fetchall()}
+    pg.commit()   # 10-25: 읽기 뒤 트랜잭션을 닫는다 — 열어 둔 채 받기(수 분)를 하면 서비스DB 가 2분에 끊는다(idle_in_transaction_session_timeout)
     new = chg = same = bad = 0; buf = []; 시간 = {}
     def flush():
         nonlocal buf

@@ -1081,5 +1081,26 @@
     "detail,geo",
     "--times",
     "2"
+  ],
+  "zs-svc-005": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\005_fail_stuck.sql",
+    "select publish_id, kind, status from svc.publish order by 1 desc limit 6"
+  ],
+  "sp-retry-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "ids",
+    "--ids",
+    "528323",
+    "502677",
+    "206563",
+    "82907",
+    "255803",
+    "365177",
+    "--workers",
+    "2"
   ]
 }
