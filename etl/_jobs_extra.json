@@ -1027,7 +1027,7 @@
     "python",
     "svc_compare_sugg.py",
     "--n",
-    "100"
+    "60"
   ],
   "zq-cols3-par": [
     "python",
@@ -1038,7 +1038,7 @@
     "python",
     "svc_compare_sugg.py",
     "--n",
-    "80",
+    "40",
     "--path",
     "/api/complexes"
   ],
@@ -1102,5 +1102,57 @@
     "365177",
     "--workers",
     "2"
+  ],
+  "zq-load-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_load.sql"
+  ],
+  "zw-after-loads-par": [
+    "python",
+    "svc_after_loads.py"
+  ],
+  "sp-full-rest-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "full",
+    "--min-hhld",
+    "0",
+    "--workers",
+    "6"
+  ],
+  "zl-misc-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "here_adm,here_lawd,near,apin,apin_cnt"
+  ],
+  "zs-svc-006": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\006_resp_cache.sql"
+  ],
+  "sc-misc-par": [
+    "python",
+    "svc_compare_misc.py",
+    "--n",
+    "30"
+  ],
+  "zs-svc-q5": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select left(l.sgg_cd,2) sido, count(*) 단지, count(distinct l.sgg_cd) 시군구, count(*) filter (where exists (select 1 from svc.complex_json j where j.complex_id=l.complex_id and j.kind='detail')) 담김 from svc.complex_list l where l.merged_into is null group by 1 order by 2 desc"
+  ],
+  "zs-probe3-par": [
+    "python",
+    "svc_probe.py",
+    "--times",
+    "2",
+    "/api/areas/here?lat=37.5&lng=127.03",
+    "/api/complexes/near?lat=37.5&lng=127.03",
+    "/api/applyhome/pins?bbox=126.90,37.45,127.15,37.60",
+    "/api/complexes/103835/points?kind=subway&key="
   ]
 }

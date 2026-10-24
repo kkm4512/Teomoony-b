@@ -11017,3 +11017,9 @@ v_lawd_map 3개 동         5,568ms → 37ms
 - **11-281 (10-25 07:00) 03~06시 매시 발행 4번이 죽었던 일**: 11-278 에서 건 idle_in_transaction_session_timeout 2분에 **발행기 자신**이 걸렸다 — 서비스DB 를 읽은 뒤 트랜잭션을 연 채로 몇 분 동안 단지를 받았다(첫 flush 에서 "server closed the connection").
   지도 층 · 마커는 그 전에 커밋해서 매시 새로 됐고, 바뀐 단지 다시 담기만 02:05 뒤로 밀렸다(화면은 그동안 직전 값). 고침: 읽기 뒤 바로 commit. 'running' 으로 남은 10~13 은 failed 로 적음(005).
   전체 발행 4(20세대 이상) 04:50 끝: 124,328건 · 실패 6 → ids 로 다시(발행 14, 전부 됨).
+- **11-282 (10-25 07:50) 남은 넷도 서비스DB(사장님 "2번 ㄱㄱ")**: 지금 위치 지역(areas/here — 적재DB 도형 geom.STAsText() 그대로 PostGIS 로 · ST_Contains) · 내 위치 주변(near — geography ST_Distance · 옛 CAST AS INT = trunc) · 청약 핀(apin + apin_cnt).
+  대조(무작위 30/30/16): 전부 같음. 옛 0.07~1.3초 → 새 0.02~0.05초. svc_mode "misc".
+  ★ 청약 공고일은 '2026-10-14' 와 '20261014  ' 가 섞여 있고, 적재DB(Windows 콜레이션)는 하이픈을 1단계에서 무시 · 끝 빈칸 무시 · 같으면 하이픈 쪽이 큼 → 그대로 흉내(자동완성 · 목록 검색 청약 갈래도).
+  호 상세 · 주변 지점(?kind=&key=) · 점포 목록(?life=)은 조합이 너무 많아 **지나며 담기**(svc.resp_cache, 주소 = 키 · 24시간 · 그 단지가 바뀌면 매시 발행이 지움). svc_mode "cache".
+  옛 경로 동점: near(거리 → complex_id) · 청약 핀(→ house_manage_no, pblanc_no) · areas/here(ORDER BY 1, 2).
+- **11-283 남은 단지 전부 발행**: 허브 · 파일럿이 _queue 에서 사라지면 svc_after_loads.py 가 sp-full-rest-par(--min-hhld 0, 6 workers)를 놓는다. 남은 ~56만 단지 · ~225만 건 · 5일쯤.

@@ -89,6 +89,8 @@ LAYERS = [
 
 from svc_suggest_src import SUGG
 LAYERS += SUGG   # 자동완성 원천(sg_*) — 같은 방식(새 표 → 바꿔 끼움 · 큰 표는 지문)
+from svc_misc_src import MISC
+LAYERS += MISC   # 지금 위치 지역 · 내 위치 주변 · 청약 핀(10-25 사장님 "2번 ㄱㄱ")
 
 
 def 값(v, 형):
@@ -144,6 +146,7 @@ def build(ms, pg, name, src_sql, cols, idx, post=()):
 def run(ms, pg, force=(), only=()):
     with pg.cursor() as c:
         c.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        c.execute("CREATE EXTENSION IF NOT EXISTS postgis")
         # 이름 정렬: 적재DB(Korean_Wansung_CI_AS) 와 비슷하게 — 한글은 음절 순, 영문은 대소문자 구분 없이(level2)
         c.execute("SELECT 1 FROM pg_collation WHERE collname = 'ko_ci' AND collnamespace = 'svc'::regnamespace")
         if not c.fetchone(): c.execute("CREATE COLLATION svc.ko_ci (provider = icu, locale = 'ko-KR-u-ks-level2', deterministic = false)")

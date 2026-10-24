@@ -227,7 +227,13 @@ def main():
         # ★ 10-25: 적재DB 시각은 UTC(컨테이너 SYSDATETIME) · 기준선은 KST — UTC 로 바꿔 넘긴다(전에는 9시간 앞을 기준으로 봐서 바뀐 게 0건이었다)
         # ★ 이미 서비스DB 에 담긴 단지만 다시 — 안 담긴 곳은 어차피 적재DB 경로가 답하고, 밀린 것(backlog)이 차례로 담는다
         담김 = {cid for cid, k in have if k == "detail"}
-        ch = [cid for cid in changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None)) if cid in info and cid in 담김]
+        ch_all = changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None))
+        ch = [cid for cid in ch_all if cid in info and cid in 담김]
+        # 지나며 담긴 응답(호 상세 · 주변 지점 · 점포 목록)은 그 단지가 바뀌면 지운다 — 다음 요청 때 옛 경로가 새로 답하고 다시 담긴다
+        with pg.cursor() as c:
+            c.execute("DELETE FROM svc.resp_cache WHERE complex_id = ANY(%s)", (list(ch_all) or [0],))
+            print(f"  지나며 담긴 응답 지움 {c.rowcount:,}", flush=True)
+        pg.commit()
         want = [(cid, k) for cid in sorted(ch, key=순위) for k in kinds_for(info[cid][0]) if k in ("detail", "history", "usage")]
         밀림 = [(cid, k) for cid in sorted(info, key=순위) for k in kinds_for(info[cid][0]) if (cid, k) not in have][: a.backlog]
         print(f"  바뀐 단지 {len(ch):,}(기준 {since}) · 밀린 것 {len(밀림):,} 더", flush=True)
