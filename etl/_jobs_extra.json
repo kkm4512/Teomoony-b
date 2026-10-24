@@ -694,5 +694,36 @@
     "__SQL__",
     "C:\\Project\\Teomoony\\deploy\\sql\\347_change_log_run.sql",
     "347_change_log_run"
+  ],
+  "hb-hub-test-par": [
+    "python",
+    "hub_bulk.py",
+    "--cat",
+    "건축물대장",
+    "--only",
+    "표제부",
+    "--month",
+    "2026-09",
+    "--workers",
+    "1"
+  ],
+  "hb-hub-all-par": [
+    "python",
+    "hub_bulk.py",
+    "--workers",
+    "4"
+  ],
+  "hl-hub-test-par": [
+    "python",
+    "load_hub.py",
+    "--code",
+    "0402",
+    "--month",
+    "202609"
+  ],
+  "hl-hub-all-par": [
+    "python",
+    "load_hub.py",
+    "--all"
   ]
 }
