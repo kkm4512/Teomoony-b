@@ -644,7 +644,7 @@
     "--threads",
     "8",
     "--rps",
-    "6"
+    "8"
   ],
   "zk-kill-kaptcost": [
     "powershell",
@@ -762,5 +762,17 @@
     "-NoProfile",
     "-Command",
     "cd C:\\Project\\Teomoony; docker compose --env-file .env -f deploy\\docker-compose.yml up -d; Start-Sleep 20; docker ps --format \"{{.Names}} {{.Status}}\"; docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\""
+  ],
+  "zk-kill-pilot": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'run_plan|teomoony_ingest' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zd-svc-init": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker exec teomoony-svc psql -U teomoony -d teomoony -v ON_ERROR_STOP=1 -c \"CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE SCHEMA IF NOT EXISTS svc; CREATE SCHEMA IF NOT EXISTS app;\" -c \"SELECT extname, extversion FROM pg_extension ORDER BY 1;\" -c \"SELECT version();\"; docker exec teomoony-redis redis-cli INFO memory | Select-String maxmemory_human,used_memory_human"
   ]
 }
