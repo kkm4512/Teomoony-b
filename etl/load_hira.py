@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """load_hira - 심평원 병원정보서비스 · 약국정보서비스 목록 적재  2026-10-21
 
-  py load_hira.py            서울 전체 + 경기 중 안양 (병원 · 약국)
+  py load_hira.py            **전국** (병원 · 약국) — 2026-10-24: 서울 + '안양' 글자 거르기를 걷어냄
+  py load_hira.py --sido 110000 310000   심평원 시도코드로 고를 때
   py load_hira.py --probe    받기만 하고 건수만 말한다
 
 ★ 출처: apis.data.go.kr/B551182 hospInfoServicev2/getHospBasisList · pharmacyInfoService/getParmacyBasisList (DATA_GO_KR_KEY)
 ★ 한 번에 1000행. totalCount 만큼 다 받았을 때만 '안 보인 기관' 을 is_current = 0 으로 돌린다 — 덜 받고 지우면 거짓말이 된다.
-★ 경기는 시군구 이름(또는 주소)에 '안양' 이 든 것만 싣는다(우리 범위).
+★ 2026-10-24 전국 넓히기 전: 전국 목록이 10만 남짓(약 110쪽)이라 통째로 받는다. 지역 거르기는 하지 않는다 —
+  화면은 단지에서 거리로 찾고, '이 시군구를 받았나' 는 좌표가 든 법정동 경계로 센다(meta.coverage). 예전의 '안양' 글자 거르기는
+  주소 글자에 기대는 방식이라 지역이 늘면 깨진다.
 """
 import argparse, io, json, os, sys, time
 import urllib.parse, urllib.request
@@ -27,11 +30,11 @@ def env():
     return d
 
 
-def pages(K, op, sido):
+def pages(K, op, sido=None):
     out, page, total = [], 1, None
     while True:
         u = B + op + "?serviceKey=" + K + "&" + urllib.parse.urlencode(
-            {"sidoCd": sido, "numOfRows": 1000, "pageNo": page, "_type": "json"})
+            {**({"sidoCd": sido} if sido else {}), "numOfRows": 1000, "pageNo": page, "_type": "json"})
         for a in range(3):
             try:
                 with urllib.request.urlopen(u, timeout=60) as r:
@@ -50,17 +53,20 @@ def pages(K, op, sido):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--probe", action="store_true"); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("--probe", action="store_true")
+    ap.add_argument("--sido", nargs="*", help="심평원 시도코드(110000 서울 · 310000 경기 …). 생략하면 전국"); a = ap.parse_args()
     e = env(); key = e.get("DATA_GO_KR_KEY", "")
     if not key: sys.exit(".env 의 DATA_GO_KR_KEY 가 비어 있습니다")
     K = key if "%" in key else urllib.parse.quote(key)
     got = {}
     for g, op in OPS.items():
-        s, ts = pages(K, op, "110000")
-        k, tk = pages(K, op, "310000")
-        ay = [x for x in k if "안양" in (x.get("sgguCdNm") or "") or "안양시" in (x.get("addr") or "")]
-        got[g] = (s + ay, len(s) == ts and len(k) == tk)
-        print(f"{g}: 서울 {len(s)}/{ts} · 경기 {len(k)}/{tk} 중 안양 {len(ay)}", flush=True)
+        rows, 다 = [], True
+        for sd in (a.sido or [None]):
+            r_, t_ = pages(K, op, sd)
+            rows += r_; 다 = 다 and len(r_) == t_
+            print(f"{g}: {sd or '전국'} {len(r_):,}/{t_:,}", flush=True)
+        # ★ '사라짐' 판정은 **전국을 다 받았을 때만** — 일부 시도만 받고 나머지를 지우면 거짓말이 된다
+        got[g] = (rows, 다 and not a.sido)
     if a.probe: return
 
     conn = pymssql.connect(server=e.get("DB_HOST", "127.0.0.1"), port=int(e.get("DB_PORT", 11433)),

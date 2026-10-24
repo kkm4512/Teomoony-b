@@ -631,10 +631,11 @@ def cmd_load(cfg, args):
             code, msg, total, rows = parse_items(body)
 
             # bronze - 원문 보존 (파싱 결과와 무관하게 항상)
+            # 2026-10-24(340): 원문은 gzip 으로 담는다 — 평문 그대로면 전국에서 1.5TB. 되돌리기 = DECOMPRESS(body_gz) · 읽기는 bronze.v_api_payload
             q(cur, """INSERT INTO bronze.api_payload
                       (run_id, source_id, req_url_hash, req_params, http_status,
-                       result_code, body, body_sha256)
-                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       result_code, body_gz, body_sha256)
+                      VALUES (%s,%s,%s,%s,%s,%s,COMPRESS(CAST(%s AS NVARCHAR(MAX))),%s)""",
               (run_id, source_id,
                hashlib.sha256(full.encode()).digest(), json.dumps(params, ensure_ascii=False),
                http, code, body, hashlib.sha256(body.encode()).digest()))

@@ -69,7 +69,7 @@ def main():
       cur.execute("""SELECT DISTINCT e.pnu FROM silver.bld_expos e
                     JOIN silver.bld_expos_pubuse_area x ON x.mgm_bldrgst_pk = e.mgm_bldrgst_pk AND x.is_current = 1
                      AND x.expos_pubuse_gb_cd = '1' AND x.main_purps_cd IN ('02002', '02003')
-                   WHERE e.is_current = 1 AND e.pnu IS NOT NULL AND (LEFT(e.pnu, 2) = '11' OR LEFT(e.pnu, 5) IN ('41171', '41173'))
+                   WHERE e.is_current = 1 AND e.pnu IS NOT NULL AND LEFT(e.pnu, 5) IN (SELECT sgg_cd FROM meta.v_target_sgg)   -- 2026-10-24: 적재 대상 시군구
                      AND NOT EXISTS (SELECT 1 FROM silver.ned_aphus_done d WHERE d.pnu = e.pnu)""")
     todo = [r[0] for r in cur.fetchall()]
     print(f"받을 필지 {len(todo):,}", flush=True)

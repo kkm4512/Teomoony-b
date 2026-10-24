@@ -27,7 +27,8 @@
   446,040 에서 멈췄는데 "OK" 로 보고될 뻔했다(CONTEXT 11-6x). 여기서는
   연속 실패가 쌓이면 **멈추고 말한다.**
 """
-import argparse, hashlib, json, os, sys, time
+import argparse, hashlib, json, os, sys, threading, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from concurrent.futures import ThreadPoolExecutor
 import requests
 import pymssql
@@ -87,6 +88,10 @@ def ymd8(v):
     return s if len(s) == 8 else None
 
 
+from _rate import 조절기   # 2026-10-24 속도 맞추개(AIMD) — 여러 적재기가 같이 쓴다
+조절 = 조절기()   # main() 에서 --rps · --max-rps 로 다시 만든다
+
+
 def fetch(key, domain, pnu, retries=3):
     """그 필지의 **전 연도**를 받는다. 돌려주는 것: (행목록, 오류문구).
        오류문구가 None 이 아니면 **실패**다 — 부르는 쪽이 세야 한다."""
@@ -94,10 +99,12 @@ def fetch(key, domain, pnu, retries=3):
          "format": "json", "numOfRows": 200, "pageNo": 1}
     last = None
     for a in range(retries):
+        조절.기다림()
         try:
-            r = requests.get(URL, params=p, timeout=40)
+            r = 세션().get(URL, params=p, timeout=40)
             if r.status_code != 200:
                 last = f"HTTP {r.status_code}"
+                if r.status_code in (429, 500, 502, 503, 504): 조절.실패()
             else:
                 d = r.json()
                 root = d.get("landCharacteristicss") or {}
@@ -111,13 +118,24 @@ def fetch(key, domain, pnu, retries=3):
                             f"  .env 의 VWORLD_DOMAIN 을 확인하세요(지금 '{domain}').\n"
                             f"  키는 **등록한 도메인**에서만 동작합니다.")
                     return [], f"{code} {msg}"
+                조절.성공()
                 return (root.get("field") or []), None
         except SystemExit:
             raise
         except Exception as e:
             last = f"{type(e).__name__}: {str(e)[:80]}"
+            조절.실패()
         time.sleep(0.8 * (a + 1))
     return [], last or "알 수 없음"
+
+
+_tls = threading.local()
+def 세션():
+    """스레드마다 연결을 재사용한다(매번 새 TLS 연결이면 서버도 우리도 느리다)."""
+    s_ = getattr(_tls, "s", None)
+    if s_ is None:
+        s_ = requests.Session(); s_.mount("https://", requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=2)); _tls.s = s_
+    return s_
 
 
 def 연도별최신(rows):
@@ -141,14 +159,20 @@ def main():
     ap.add_argument("--lawd", nargs="*", help="법정동코드 10자리")
     ap.add_argument("--skip-loaded", action="store_true",
                     help="이미 land_char 에 있는 PNU 는 건너뛴다")
-    ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--workers", type=int, default=24)
     ap.add_argument("--sleep", type=float, default=0.03)
     ap.add_argument("--limit", type=int, help="대상 PNU 수 상한(시험용)")
     ap.add_argument("--probe", action="store_true", help="한 필지만 떠보고 끝낸다")
-    ap.add_argument("--max-fail", type=int, default=50,
+    ap.add_argument("--recheck-none", action="store_true", help="'토지특성 없음' 으로 적어 둔 필지도 다시 묻는다")
+    ap.add_argument("--rps", type=float, default=4.0, help="처음 초당 요청 수(스스로 올리고 내린다). VWorld NED 는 초당 5 남짓이 오래 버틴다(2026-10-24 실측)")
+    ap.add_argument("--max-rps", type=float, default=6.0)
+    ap.add_argument("--rest", type=float, default=30.0, help="막혔을 때 다 같이 쉬는 초(VWorld 막힘은 30초 넘게 간다)")
+    ap.add_argument("--max-fail", type=int, default=2000,
                     help="연속 실패가 이만큼 쌓이면 멈춘다")
     a = ap.parse_args()
 
+    global 조절
+    조절 = 조절기(a.rps, a.max_rps, a.rest)
     env = load_env(ENV)
     key = env.get("VWORLD_KEY", "").strip()
     if not key:
@@ -172,12 +196,21 @@ def main():
     if a.lawd:
         q.append("AND LEFT(p.pnu,10) IN (" + ",".join(["%s"] * len(a.lawd)) + ")")
         prm += list(a.lawd)
-    elif a.sgg:
+    else:
+        # ★ 2026-10-24: 시군구를 안 주면 **적재 대상 시군구**(meta.v_target_sgg)만 — 이웃 시군구에 반경만큼 넘쳐 받은 필지까지 훑지 않는다
+        if not a.sgg:
+            sys.path.insert(0, HERE)
+            from _targets import 대상시군구
+            a.sgg = 대상시군구(cur=cur)
         q.append("AND LEFT(p.pnu,5) IN (" + ",".join(["%s"] * len(a.sgg)) + ")")
         prm += list(a.sgg)
     if a.skip_loaded:
         q.append("""AND NOT EXISTS (SELECT 1 FROM silver.land_char lc
                                      WHERE lc.pnu = p.pnu AND lc.is_current = 1)""")
+        # ★ 2026-10-24: 물었는데 **토지특성이 없다고 온** 필지(도로 · 국공유지 등)는 다시 묻지 않는다 — 이어받기마다 수만 번 헛걸음이었다.
+        #   다시 확인하려면 --recheck-none
+        if not a.recheck_none:
+            q.append("AND NOT EXISTS (SELECT 1 FROM silver.land_char_none n WHERE n.pnu = p.pnu)")
     q.append("ORDER BY p.pnu")
     cur.execute(" ".join(q), tuple(prm))
     pnus = [r[0] for r in cur.fetchall()]
@@ -203,7 +236,49 @@ def main():
     받음 = 넣음 = 바뀜 = 0
     빈것 = []          # 응답은 왔는데 행이 0 인 것(= 토지특성이 없는 필지. 실패 아님)
     실패 = []
+    빈새것 = []        # 이번에 '토지특성 없음' 으로 확인한 필지 — silver.land_char_none 에 적어 다음엔 다시 묻지 않는다
     연속실패 = 0
+
+    칸 = ["pnu"] + [c for _, c in F]
+    쌓임 = []
+    cur.execute("""IF OBJECT_ID('tempdb..#lc') IS NOT NULL DROP TABLE #lc;
+        CREATE TABLE #lc (pnu CHAR(19) NOT NULL, base_year CHAR(4), base_month CHAR(2), ld_code_nm NVARCHAR(200), mnnm_slno NVARCHAR(40),
+          regstr_se_code VARCHAR(2), lndcgr_code VARCHAR(4), lndcgr_nm NVARCHAR(40), lndpcl_ar DECIMAL(19,5), prpos_area1_nm NVARCHAR(100),
+          prpos_area2_nm NVARCHAR(100), lad_use_sittn_nm NVARCHAR(100), tpgrph_hg_code_nm NVARCHAR(40), tpgrph_frm_code_nm NVARCHAR(40),
+          road_side_code_nm NVARCHAR(40), pblntf_pclnd DECIMAL(19,2), last_updt_dt CHAR(8), row_hash BINARY(32) NOT NULL)""")
+    conn.commit()
+
+    def 쓰기():
+        """쌓인 연도행을 #lc 에 넣고 SCD2 를 **집합으로** 한 번에 — 형이 맞는 임시표로 이으니 색인을 탄다"""
+        if not 쌓임:
+            return 0
+        cur.execute("TRUNCATE TABLE #lc")
+        자리 = ", ".join(["%s"] * (len(칸) + 1))
+        for k in range(0, len(쌓임), 400):     # 한 문장에 여러 줄(VALUES …) — executemany 보다 수십 배 빠르다
+            묶 = 쌓임[k:k + 400]
+            cur.execute(f"INSERT INTO #lc ({', '.join(칸)}, row_hash) VALUES " + ", ".join([f"({자리})"] * len(묶)),
+                        tuple(x for r in 묶 for x in r))
+        cur.execute("""UPDATE t SET t.is_current = 0, t.valid_to = SYSDATETIME()
+                         FROM #lc s INNER LOOP JOIN silver.land_char t WITH (FORCESEEK) ON t.pnu = s.pnu AND t.base_year = s.base_year AND t.is_current = 1
+                        WHERE t.row_hash <> s.row_hash OPTION (MAXDOP 1)""")
+        # ★ FORCESEEK · LOOP: 임시표 몇천 줄 × 1,000만 줄 표 — 계획기가 통째로 훑는(해시) 쪽을 고르면 한 번에 몇 분이었다
+        n = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        cur.execute(f"""INSERT INTO silver.land_char ({', '.join(칸)}, row_hash)
+                        SELECT {', '.join('s.' + c for c in 칸)}, s.row_hash FROM #lc s
+                         WHERE NOT EXISTS (SELECT 1 FROM silver.land_char t WITH (FORCESEEK) WHERE t.pnu = s.pnu AND t.base_year = s.base_year AND t.is_current = 1)
+                        OPTION (MAXDOP 1, LOOP JOIN)""")
+        conn.commit()
+        쌓임.clear()
+        return n
+
+    def 빈쓰기():
+        if not 빈새것:
+            return
+        for k in range(0, len(빈새것), 800):
+            묶 = sorted(set(빈새것[k:k + 800]))
+            cur.execute("INSERT INTO silver.land_char_none (pnu) SELECT CAST(v.p AS CHAR(19)) FROM (VALUES " + ", ".join(["(%s)"] * len(묶)) + ") v(p) "
+                        "WHERE NOT EXISTS (SELECT 1 FROM silver.land_char_none n WHERE n.pnu = CAST(v.p AS CHAR(19)))", tuple(묶))
+        conn.commit(); 빈새것.clear()
 
     def 일(pnu):
         time.sleep(a.sleep)
@@ -211,6 +286,15 @@ def main():
 
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
         for i, (pnu, rows, err) in enumerate(ex.map(일, pnus), 1):
+            # ★ 2026-10-24: 진행 줄을 **맨 위**로 — 예전엔 실패 · 빈 필지에서 continue 하느라 500번째가 그런 필지면 한 줄도 안 찍혔다
+            if i % 500 == 0:
+                바뀜 += 쓰기()
+                빈쓰기()
+                걸린 = time.time() - t0
+                속도 = i / 걸린 if 걸린 else 0
+                남은 = (len(pnus) - i) / 속도 if 속도 else 0
+                print(f"  [{ts()}] {i:,}/{len(pnus):,} 필지 · 행 {넣음:,} · 빈 필지 {len(빈것):,} · "
+                      f"{속도:.0f}필지/초 · 남은 {남은/60:.0f}분 · 실패 {len(실패):,} · 지금 초당 {조절.rps:.0f} · 막힘 {조절.쉼횟수}번", flush=True)
             if err:
                 실패.append((pnu, err)); 연속실패 += 1
                 if 연속실패 >= a.max_fail:
@@ -224,7 +308,7 @@ def main():
             받음 += 1
             keep = 연도별최신(rows)
             if not keep:
-                빈것.append(pnu)
+                빈것.append(pnu); 빈새것.append(pnu)
                 continue
 
             for r in keep:
@@ -240,31 +324,15 @@ def main():
                         vals[col] = v or None
                 rh = hashlib.sha256("\x1f".join(
                     str(vals[k]) for k in sorted(vals)).encode("utf-8")).digest()
-
-                # SCD2 — 자연키는 (pnu, base_year)
-                cur.execute("""UPDATE silver.land_char
-                                  SET is_current = 0, valid_to = SYSDATETIME()
-                                WHERE is_current = 1 AND pnu = %s AND base_year = %s
-                                  AND row_hash <> %s""",
-                            (pnu, vals["base_year"], rh))
-                바뀜 += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
-                cols = list(vals.keys())
-                cur.execute(
-                    f"IF NOT EXISTS (SELECT 1 FROM silver.land_char "
-                    f" WHERE is_current = 1 AND pnu = %s AND base_year = %s) "
-                    f"INSERT INTO silver.land_char ({', '.join(cols)}, row_hash) "
-                    f"VALUES ({', '.join(['%s'] * len(cols))}, %s)",
-                    (pnu, vals["base_year"]) + tuple(vals[c] for c in cols) + (rh,))
+                # ★ 2026-10-24: 한 줄마다 UPDATE + IF NOT EXISTS INSERT 두 번이던 것을 **모아서 한 번에**(아래 쓰기()).
+                #   예전 방식은 문자열 인자가 N'…' 로 가서 char(19) 칸과 형이 달라 초당 2줄 남짓이었다.
+                쌓임.append(tuple(vals[c] for c in 칸) + (rh,))
                 넣음 += 1
+            if len(쌓임) >= 3000:
+                바뀜 += 쓰기()
 
-            if i % 500 == 0:
-                conn.commit()
-                걸린 = time.time() - t0
-                속도 = i / 걸린 if 걸린 else 0
-                남은 = (len(pnus) - i) / 속도 if 속도 else 0
-                print(f"  [{ts()}] {i:,}/{len(pnus):,} 필지 · 행 {넣음:,} · "
-                      f"{속도:.0f}필지/초 · 남은 {남은/60:.0f}분", flush=True)
-    conn.commit()
+    바뀜 += 쓰기()
+    빈쓰기()
 
     걸린 = time.time() - t0
     print(f"\n[{ts()}] 끝 — {걸린/60:.1f}분")

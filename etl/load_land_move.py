@@ -77,7 +77,7 @@ TARGET = {
     2: """SELECT DISTINCT s.pnu FROM gold.closed_site s
            WHERE NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel c WHERE c.pnu = s.pnu AND c.is_current = 1)""",
     3: """SELECT c.pnu FROM silver.cadastral_parcel c
-           WHERE c.is_current = 1 AND (LEFT(c.pnu, 2) = '11' OR LEFT(c.pnu, 5) IN ('41171', '41173'))""",
+           WHERE c.is_current = 1 AND LEFT(c.pnu, 5) IN (SELECT sgg_cd FROM meta.v_target_sgg)""",   # 2026-10-24: 서울·안양 고정 → 적재 대상 시군구
 }
 MERGE = """MERGE silver.land_move_hist AS t
 USING (SELECT %s AS pnu, %s AS 대장코드, %s AS 이력순번) AS k ON t.pnu = k.pnu AND t.대장코드 = k.대장코드 AND t.이력순번 = k.이력순번

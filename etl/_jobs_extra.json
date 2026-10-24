@@ -480,5 +480,116 @@
   "af-kinderinfo-par": [
     "python",
     "load_kinder_info.py"
+  ],
+  "zp-gz1-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\340_payload_gz_r1.sql",
+    "340_payload_gz_r1"
+  ],
+  "zp-gz2-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\340_payload_gz_r2.sql",
+    "340_payload_gz_r2"
+  ],
+  "zp-gz3-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\340_payload_gz_r3.sql",
+    "340_payload_gz_r3"
+  ],
+  "zp-gz4-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\340_payload_gz_r4.sql",
+    "340_payload_gz_r4"
+  ],
+  "zp-gzafter-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\340_payload_gz_after.sql",
+    "340_payload_gz_after"
+  ],
+  "zz-landchar24-bg": [
+    "python",
+    "load_land_char.py",
+    "--skip-loaded",
+    "--workers",
+    "8",
+    "--rps",
+    "4",
+    "--max-rps",
+    "5",
+    "--rest",
+    "30"
+  ],
+  "ba-rtms-anyang-par": [
+    "python",
+    "rtms_go.py",
+    "--sgg",
+    "41171",
+    "41173",
+    "--from",
+    "200601",
+    "--to",
+    "202610",
+    "--workers",
+    "12"
+  ],
+  "ca-pms-anyang-par": [
+    "python",
+    "run_plan.py",
+    "go",
+    "--grp",
+    "pms",
+    "--workers",
+    "8"
+  ],
+  "cb-schoolinfo-anyang-par": [
+    "python",
+    "load_schoolinfo.py",
+    "--sgg",
+    "41171",
+    "41173",
+    "--yr",
+    "2024",
+    "2025",
+    "2026"
+  ],
+  "cc-kaptcost-anyang-par": [
+    "python",
+    "kapt_cost_go.py",
+    "--sgg",
+    "41171",
+    "41173",
+    "--ym",
+    "202608",
+    "--ym",
+    "202609",
+    "--workers",
+    "2"
+  ],
+  "cd-kaptcost-3m-par": [
+    "python",
+    "kapt_cost_go.py",
+    "--ym",
+    "202605",
+    "--ym",
+    "202606",
+    "--ym",
+    "202607",
+    "--workers",
+    "12"
+  ],
+  "ce-busroute-par": [
+    "python",
+    "load_bus_route.py",
+    "--max",
+    "5000"
+  ],
+  "zq-index-par": [
+    "__SQL__",
+    "C:\\Project\\Teomoony\\deploy\\sql\\344_scale_indexes.sql",
+    "344_scale_indexes"
+  ],
+  "cf-hira-all-par": [
+    "python",
+    "load_hira.py"
   ]
 }

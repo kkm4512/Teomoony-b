@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """load_vworld_zone - VWorld 용도지역·지구·구역 경계를 silver.vworld_zone 에 적재 (2026-10-22, deploy/sql/304)
 
-  py load_vworld_zone.py                          서울·안양 시군구 전부 · 레이어 전부
+  py load_vworld_zone.py                          적재 대상 시군구 전부 · 레이어 전부
   py load_vworld_zone.py --sgg 11290 --layer LT_C_UQ141
 
 ★ 시군구 경계상자(필지 bbox)를 8km2 조각(split_box)으로 썰어 받는다. 조각 하나라도 실패하면 그 시군구·레이어는 '다 받음' 으로 안 적는다.
@@ -67,7 +67,9 @@ def main():
                            password=env.get("DB_PASSWORD", ""), database=env.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
     cur = conn.cursor()
     cur.execute("""SELECT LEFT(pnu,5), MIN(bbox_minx), MIN(bbox_miny), MAX(bbox_maxx), MAX(bbox_maxy)
-                     FROM silver.cadastral_parcel WHERE is_current = 1 GROUP BY LEFT(pnu,5) ORDER BY 1""")
+                     FROM silver.cadastral_parcel WHERE is_current = 1
+                      AND LEFT(pnu,5) IN (SELECT sgg_cd FROM meta.v_target_sgg)   -- 2026-10-24: 이웃 시군구에 넘쳐 받은 필지 말고 적재 대상만
+                    GROUP BY LEFT(pnu,5) ORDER BY 1""")
     sggs = cur.fetchall()
     if a.sgg: sggs = [x for x in sggs if x[0] in set(a.sgg)]
     layers = a.layer or LAYERS

@@ -26,6 +26,7 @@ load_kapt_cost - 관리비 3개 서비스를 silver.kapt_cost 에 적재
     관리비는 K-apt 축 위에만 산다.
 """
 import argparse, os, sys, time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 import requests
 import pymssql
@@ -151,6 +152,7 @@ def main():
     ap.add_argument("--months", type=int, help="최근 N개월 (전월 기준 역순)")
     ap.add_argument("--svc", action="append", choices=["CMN", "IND", "REP"],
                     help="서비스만 골라 적재 (트래픽을 나눠 돌릴 때)")
+    ap.add_argument("--threads", type=int, default=8, help="한 단지·한 달의 오퍼레이션을 같이 부를 스레드 수(2026-10-24)")
     args = ap.parse_args()
 
     env = load_env(ENV)
@@ -217,14 +219,17 @@ def main():
     # tick 은 단지-월 하나가 끝날 때만. 호출마다 찍으면 수천 줄이 쏟아진다.
     pg = progress.Progress(len(codes) * len(yms), "관리비")
 
+    풀 = ThreadPoolExecutor(max_workers=max(1, args.threads))
     ins = upd = same = empty = fail = unknown = 0
     seen_unknown = set()
     for ym in yms:
         for code in codes:
             rows = []
             broke = False
-            for svc, path, op in ops:
-                it = item_of(get(f"{BASE}/{path}/{op}", key, {"kaptCode": code, "searchDate": ym}))
+            # ★ 2026-10-24 사장님 "운영키 · 스레드 최대한": 한 단지·한 달의 31 오퍼레이션을 **같이** 부른다(예전엔 하나씩 — 단지 하나에 6초).
+            #   쓰기는 아래에서 이 스레드 하나가 순서대로 한다(DB 연결은 하나).
+            결과 = list(풀.map(lambda o: (o, item_of(get(f"{BASE}/{o[1]}/{o[2]}", key, {"kaptCode": code, "searchDate": ym}))), ops))
+            for (svc, path, op), it in 결과:
                 if it is None:
                     fail += 1
                     broke = True

@@ -419,7 +419,9 @@ def db_password():
 
 def run_sql(path, arg, log):
     """docker 안의 sqlcmd 로 돌린다. 비밀번호는 **인자로만** 넘기고 적지 않는다."""
-    subprocess.run(["docker", "cp", path, "teomoony-mssql:/tmp/job.sql"],
+    # ★ 2026-10-24: 병렬 줄에서 SQL 작업 여럿이 같이 돌면 /tmp/job.sql 하나를 서로 덮어 **남의 SQL 을 돌린다** — 작업마다 이름을 따로
+    dst = f"/tmp/job_{arg}.sql"
+    subprocess.run(["docker", "cp", path, "teomoony-mssql:" + dst],
                    stdout=log, stderr=subprocess.STDOUT, check=True)
     return subprocess.run(
         ["docker", "exec", "teomoony-mssql",
@@ -431,7 +433,7 @@ def run_sql(path, arg, log):
          #   11-30(VWorld BOX 가 조용히 0건)과 같은 모양이라 고친다.
          #   ★ 지금까지 조용히 넘어가던 SQL 에러가 이제 실패로 뜬다.
          "-b",
-         "-i", "/tmp/job.sql"],
+         "-i", dst],
         stdout=log, stderr=subprocess.STDOUT).returncode
 
 # ---- 적재 뒤 AI 검색 조건 요약표(312) 다시 세기 (2026-10-22 사장님 "적재 뒤에 저절로") ----
@@ -565,7 +567,7 @@ def handle(path, quiet=False):
 
 _bg = {"t": None}
 
-PAR_MAX = 4
+PAR_MAX = 8   # 2026-10-24 사장님 "적재할 때 스레드를 최대한" — 4 → 8
 _par = {}   # 이름 → 스레드
 
 
