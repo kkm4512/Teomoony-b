@@ -750,5 +750,17 @@
     "-NoProfile",
     "-Command",
     "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'load_hub' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zd-pull-svc": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker pull postgis/postgis:17-3.5; docker pull redis:7.4-alpine; docker images --format \"{{.Repository}}:{{.Tag}} {{.Size}}\""
+  ],
+  "zd-svc-up": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "cd C:\\Project\\Teomoony; docker compose --env-file .env -f deploy\\docker-compose.yml up -d; Start-Sleep 20; docker ps --format \"{{.Names}} {{.Status}}\"; docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\""
   ]
 }
