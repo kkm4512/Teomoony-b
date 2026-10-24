@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """load_childcare - 어린이집(보육정보공개 cpmsapi030) 적재  2026-10-22  (deploy/sql/303)
 
-  py load_childcare.py                         서울 25구 + 안양(41170)
+  py load_childcare.py                         적재 대상 시군구 전부(meta.load_target · 일반구는 시 코드로 — 안양 41170)
   py load_childcare.py --arcode 11290 41170    몇 곳만
   py load_childcare.py --sql-out 파일          DB 대신 SQL 파일(/api/_apply 로)
 
@@ -15,9 +15,6 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV = os.path.join(HERE, "..", ".env")
 URL = "https://api.childcare.go.kr/mediate/rest/cpmsapi030/cpmsapi030/request"
-SEOUL = ["11110", "11140", "11170", "11200", "11215", "11230", "11260", "11290", "11305", "11320", "11350", "11380", "11410",
-         "11440", "11470", "11500", "11530", "11545", "11560", "11590", "11620", "11650", "11680", "11710", "11740"]
-ANYANG = ["41170"]
 
 
 def env():
@@ -95,7 +92,10 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--arcode", nargs="*"); ap.add_argument("--sql-out"); a = ap.parse_args()
     key = os.environ.get("CHILDCARE_KEY") or env().get("CHILDCARE_KEY", "")
     if not key: sys.exit(".env 에 CHILDCARE_KEY 가 없습니다")
-    codes = a.arcode or (SEOUL + ANYANG)
+    if not a.arcode:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _targets import 대상시군구
+    codes = a.arcode or 대상시군구(시로=True)   # 2026-10-24: 서울·안양 목록을 코드에 두지 않는다
     allsql = ["/* load_childcare.py --sql-out (303) */\nSET NOCOUNT ON;\nGO\n"]; 합 = 0; 본 = set()
     conn = None
     if not a.sql_out:

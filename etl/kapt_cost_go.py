@@ -4,14 +4,12 @@
   py kapt_cost_go.py --months 2 --workers 4
   py kapt_cost_go.py --ym 202608 --sgg 11290
 
-★ 구 하나라도 실패하면 종료코드 1. 안양은 보류(11-235) — 기본은 서울 25구.
+★ 구 하나라도 실패하면 종료코드 1. 기본은 적재 대상 시군구 전부(meta.load_target · 2026-10-24) — 빼려면 --sgg 로 고른다.
 """
 import argparse, os, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SEOUL = ["11110","11140","11170","11200","11215","11230","11260","11290","11305","11320","11350","11380","11410",
-         "11440","11470","11500","11530","11545","11560","11590","11620","11650","11680","11710","11740"]
 lock = threading.Lock()
 
 def main():
@@ -21,7 +19,9 @@ def main():
     ap.add_argument("--sgg", nargs="*", default=None)
     ap.add_argument("--workers", type=int, default=4)
     a = ap.parse_args()
-    gus = [g for g in SEOUL if not a.sgg or g in a.sgg]
+    sys.path.insert(0, HERE)
+    from _targets import 대상시군구
+    gus = list(a.sgg) if a.sgg else 대상시군구()   # 2026-10-24: 서울 25구 목록 → 적재 대상 시군구(meta.v_target_sgg)
     when = (["--months", str(a.months)] if a.months else []) + sum([["--ym", y] for y in (a.ym or [])], [])
     print(f"관리비 · {' '.join(when)} · {len(gus)}구 · 스레드 {a.workers}", flush=True)
     t0 = time.time(); bad = []

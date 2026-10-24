@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """학교알리미 적재 — 학교기본정보(apiType 0) + 학년별·학급별 학생수(apiType 09)   2026-10-23
 
-  py load_schoolinfo.py                 서울 25개 구 · 초·중·고 · 올해 공시
+  py load_schoolinfo.py                 적재 대상 시군구 전부 · 초·중·고 · 올해 공시
   py load_schoolinfo.py --sgg 11290     고른 구만
   py load_schoolinfo.py --yr 2024 2025 2026   공시연도(여럿 — 최근 3년만 공시)
   py load_schoolinfo.py --stat-only     기본정보는 건너뛰고 학생(09) · 전출입(10)만
@@ -84,8 +84,9 @@ def main():
     cur = conn.cursor()
     if a.sgg: sggs = list(a.sgg)
     else:
-        cur.execute("SELECT DISTINCT sigungu_cd FROM gold.complex WHERE is_active = 1 AND sigungu_cd LIKE '11%' ORDER BY sigungu_cd")
-        sggs = [r[0] for r in cur.fetchall()]
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _targets import 대상시군구
+        sggs = 대상시군구(cur=cur)   # 2026-10-24: '11%' 고정 → 적재 대상 시군구(meta.v_target_sgg)
     if a.probe: sggs = sggs[:1]
     print(f"대상 구 {len(sggs)}개 · 공시연도 {a.yr}", flush=True)
     nm = 0

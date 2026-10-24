@@ -304,6 +304,9 @@ JOBS = {
     # ---- AI 검색 조건 요약표(312) 다시 세기 (2026-10-22) ----
     # ★ 적재가 끝나면 handle() 이 **저절로** 뒷줄에 건다(요약다시). 손으로 떨궈도 된다. 약 20분.
     "z-askattr-par":  ["__SQL__", os.path.join(SQLDIR, "314_ask_attr_refresh.sql"), "314_ask_attr_refresh"],
+    # ---- 받은 범위표(339 meta.coverage) 다시 세기 (2026-10-24 전국 넓히기 1단계) ----
+    # ★ 화면의 'SCOPE(아직 안 받음)' 와 "○○만 다룹니다" 가 이 표를 본다. 받는 작업이 끝나면 저절로 건다(범위걸기). 약 20초.
+    "z-coverage-par": ["__SQL__", os.path.join(SQLDIR, "339_coverage_run.sql"), "339_coverage_run"],
 
     # ---- 유치원 (2026-10-19) ----
     # ★ 유치원알리미 자체 도메인이다(data.go.kr 아님).
@@ -451,6 +454,22 @@ def 요약걸기(name):
     except Exception as e:
         print(f"         (z-askattr-par 를 못 걸었다: {e})")
 
+# ---- 적재 뒤 받은 범위표(339) 다시 세기 (2026-10-24) ----
+# ★ 무엇을 받았든 범위표는 묵는다 — 그래서 이름으로 고르지 않고 **z- 가 아닌 작업이 성공하면** 건다(시험 · 미리보기 제외).
+#   20초짜리라 넉넉히 건다. 이미 걸려 있으면 또 걸지 않는다.
+def 범위걸기(name):
+    if name.startswith("z-") or name.endswith("-dry") or name.endswith("-probe") or "-test" in name:
+        return
+    q = os.path.join(QDIR, "z-coverage-par.job")
+    if os.path.exists(q):
+        return
+    try:
+        with open(q, "w", encoding="utf-8") as f:
+            f.write(f"{now()} {name} 뒤 — 받은 범위표 다시 세기\n")
+        print(f"         → z-coverage-par 를 병렬 줄에 걸었다({name} 뒤)")
+    except Exception as e:
+        print(f"         (z-coverage-par 를 못 걸었다: {e})")
+
 def handle(path, quiet=False):
     """quiet=True 면 상태 파일을 쓰지 않는다 - 뒷줄(-bg) 작업용.
 
@@ -538,6 +557,7 @@ def handle(path, quiet=False):
         print(f"         (큐에서 못 치웠다 — 다음 바퀴에 또 돕니다: {e})")
     if rc == 0:
         요약걸기(name)
+        범위걸기(name)
     if not quiet:
         write_status(state="idle", last=name, result=f"rc={rc}",
                      sec=round(took, 1), log=os.path.basename(logpath),
