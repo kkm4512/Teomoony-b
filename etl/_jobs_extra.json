@@ -899,5 +899,41 @@
     "--mode",
     "ids",
     "--markers-only"
+  ],
+  "zs-svc-q2": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select kind, sum(hit) hit, sum(miss) miss, sum(fallback) fb, max(at) from app.cache_stat where at > now() - interval '2 hours' group by 1 order by 1",
+    "select publish_id, kind, status, started_at, finished_at, rows_new, rows_changed, rows_failed from svc.publish order by 1 desc limit 5",
+    "select count(distinct complex_id), count(*), pg_size_pretty(sum(bytes)) from svc.complex_json",
+    "select kind, max(bytes), avg(bytes)::int from svc.complex_json group by 1 order by 2 desc"
+  ],
+  "zs-probe-par": [
+    "python",
+    "svc_probe.py",
+    "103835",
+    "518089",
+    "1",
+    "502677",
+    "--kinds",
+    "detail,history",
+    "--times",
+    "3"
+  ],
+  "zs-redis-info": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker exec teomoony-redis redis-cli info memory | Select-String used_memory_human,maxmemory_human; docker exec teomoony-redis redis-cli info stats | Select-String keyspace_hits,keyspace_misses,evicted_keys; docker exec teomoony-redis redis-cli dbsize"
+  ],
+  "zs-svc-q3": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select count(*) from svc.complex_list",
+    "select count(*), sum(length(j.body_gz))/1024/1024 as mb from svc.complex_json j JOIN svc.complex_list l ON l.complex_id = j.complex_id WHERE j.kind = 'detail' AND j.status = 200 AND l.merged_into IS NULL AND l.hhld >= 500 AND left(l.sgg_cd, 2) IN ('11', '28', '41')",
+    "select count(*) from svc.complex_list where merged_into is null and hhld >= 500 and left(sgg_cd,2) in ('11','28','41')",
+    "select count(*) from svc.complex_list where merged_into is null and hhld >= 20"
   ]
 }
