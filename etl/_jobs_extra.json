@@ -866,9 +866,11 @@
     "python",
     "svc_compare.py",
     "--random",
-    "60",
+    "40",
     "--top",
-    "60"
+    "30",
+    "--serve",
+    "20"
   ],
   "sc-serve-par": [
     "python",
@@ -890,5 +892,12 @@
     "python",
     "svc_sql.py",
     "..\\deploy\\svc\\pg\\002_fix_pub3.sql"
+  ],
+  "sp-markers-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "ids",
+    "--markers-only"
   ]
 }

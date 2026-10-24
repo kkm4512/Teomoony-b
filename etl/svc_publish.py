@@ -105,6 +105,52 @@ def changed_ids(ms, since):
     return [r[0] for r in cur.fetchall()]
 
 
+MARKER_SQL = """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+DECLARE @cut CHAR(8) = CONVERT(CHAR(8), DATEADD(YEAR, -3, CAST(DATEADD(HOUR, 0, SYSDATETIME()) AS DATE)), 112);
+WITH s AS (
+  SELECT cid = r.match_complex_id,
+         area_grp = CAST(FLOOR(COALESCE(r.exclu_use_ar, r.total_floor_ar, r.building_ar)) AS INT),
+         r.deal_amount, r.deal_ymd, r.dealing_gbn,
+         rn = ROW_NUMBER() OVER (PARTITION BY r.match_complex_id
+                ORDER BY CASE WHEN r.deal_ymd >= @cut THEN 0 ELSE 1 END, CASE WHEN r.deal_ymd >= @cut THEN r.deal_amount END DESC,
+                         r.deal_ymd DESC, r.deal_amount DESC, r.trade_sk DESC)
+    FROM silver.rtms_trade r
+   WHERE r.match_complex_id IS NOT NULL AND r.is_rent = 0 AND r.is_canceled = 0 AND r.deal_amount IS NOT NULL)
+SELECT c.complex_id, c.complex_nm, c.rep_plat_plc, CAST(c.has_recap AS INT), c.dong_cnt, c.hhld_cnt_sum,
+       CAST(c.centroid_lat AS FLOAT), CAST(c.centroid_lng AS FLOAT), c.trade_cnt, c.rent_cnt,
+       s.area_grp, CAST(s.deal_amount AS VARCHAR(30)), s.deal_ymd, s.dealing_gbn, al.실거래이름
+  FROM gold.v_complex_map c
+  LEFT JOIN s ON s.cid = c.complex_id AND s.rn = 1
+  LEFT JOIN gold.complex_alias al ON al.complex_id = c.complex_id
+ WHERE c.centroid_lat IS NOT NULL"""
+
+
+def publish_markers(ms, pg):
+    """지도 마커(단지 점 + 최근 3년 최고가) — 통째로 새 표를 만들어 바꿔 끼운다(읽는 쪽은 옛 표 아니면 새 표만 본다)."""
+    t = time.time()
+    cur = ms.cursor(); cur.execute(MARKER_SQL); rows = cur.fetchall()
+    with pg.cursor() as c:
+        c.execute("DROP TABLE IF EXISTS svc.complex_marker_new")
+        c.execute("""CREATE TABLE svc.complex_marker_new (
+            complex_id int PRIMARY KEY, complex_nm text, rep_plat_plc text, has_recap boolean, dong_cnt int, hhld_cnt_sum int,
+            centroid_lat double precision, centroid_lng double precision, trade_cnt int, rent_cnt int,
+            area_grp int, max_amount text, max_ymd text, max_dealing text, 실거래이름 text)""")
+        with c.copy("COPY svc.complex_marker_new FROM STDIN") as cp:
+            for r in rows:
+                r = list(r); r[3] = bool(r[3]) if r[3] is not None else None
+                cp.write_row(r)
+        c.execute("CREATE INDEX ix_marker_new_lnglat ON svc.complex_marker_new (centroid_lng, centroid_lat)")
+        c.execute("CREATE INDEX ix_marker_new_ord ON svc.complex_marker_new (dong_cnt DESC, hhld_cnt_sum DESC)")
+        c.execute("ANALYZE svc.complex_marker_new")
+        c.execute("DROP TABLE IF EXISTS svc.complex_marker")
+        c.execute("ALTER TABLE svc.complex_marker_new RENAME TO complex_marker")
+        c.execute("ALTER INDEX svc.ix_marker_new_lnglat RENAME TO ix_marker_lnglat")
+        c.execute("ALTER INDEX svc.ix_marker_new_ord RENAME TO ix_marker_ord")
+    pg.commit()
+    print(f"  지도 마커 {len(rows):,}곳 · {time.time() - t:.0f}초", flush=True)
+    return len(rows)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["full", "hourly", "ids"], default="hourly")
@@ -116,6 +162,8 @@ def main():
     ap.add_argument("--rebuild", action="store_true", help="이미 담긴 것도 다시 받는다(full)")
     ap.add_argument("--minutes", type=float, default=0, help="이 시간이 지나면 멈춘다(이어받기)")
     ap.add_argument("--sample", type=int, default=0, help="full: 무작위 N 단지만(속도 재기)")
+    ap.add_argument("--markers", action="store_true", help="지도 마커 표도 다시(hourly 는 늘)")
+    ap.add_argument("--markers-only", action="store_true")
     ap.add_argument("--min-hhld", type=int, default=0, help="full: 세대가 이 이상인 단지만(0-1세대 46만 곳은 열릴 때 적재DB 경로)")
     a = ap.parse_args()
     e = env(); ms = ms_conn(e); pg = pg_conn(e)
@@ -128,6 +176,12 @@ def main():
         pid = c.fetchone()[0]
     pg.commit()
     print(f"[{time.strftime('%H:%M:%S')}] 발행 {pid} · {a.mode} · 단지 목록 {n_list:,}", flush=True)
+    if a.markers or a.markers_only or a.mode == "hourly":
+        publish_markers(ms, pg)
+    if a.markers_only:
+        with pg.cursor() as c:
+            c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 마커만' WHERE publish_id = %s", (pid,))
+        pg.commit(); return
 
     # 대상 (단지, 종류) 목록
     with pg.cursor() as c:

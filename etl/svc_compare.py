@@ -11,6 +11,12 @@ from svc_publish import env, fetch, TIMING, WEB
 def norm(t):
     return json.loads(TIMING.sub("", t, count=1))
 
+def canon(x):
+    """순서만 다른 목록은 같게 본다 — 옛 경로 자체가 같은 날짜 · 같은 거리 동점의 순서를 정해 두지 않는다(같은 요청 두 번도 순서가 다름, 513787 실측)."""
+    if isinstance(x, dict): return {k: canon(v) for k, v in x.items()}
+    if isinstance(x, list): return sorted((canon(v) for v in x), key=lambda v: json.dumps(v, ensure_ascii=False, sort_keys=True))
+    return x
+
 def diffkeys(a, b, p=""):
     if type(a) != type(b): return [p or "(전체)"]
     if isinstance(a, dict):
@@ -38,7 +44,7 @@ def main():
     print(f"서비스DB 에 담긴 단지 {len(have):,} 중 대조 {len(pick)}(무작위 {min(a.random, len(have))} + 수도권 큰 단지 {len(top)})", flush=True)
     c.execute("SELECT complex_id, kind, status, body_gz FROM svc.complex_json WHERE complex_id = ANY(%s)", (pick,))
     rows = c.fetchall()
-    same = diff = err = 0; 칸 = {}; 보기 = []
+    same = diff = err = 순서만 = 0; 칸 = {}; 보기 = []
     t0 = time.time()
     for cid, kind, st, gz in rows:
         new = gzip.decompress(gz).decode("utf-8")
@@ -46,13 +52,16 @@ def main():
         if s2 is None: err += 1; continue
         if kind == "detail": old = TIMING.sub("", old, count=1)
         if s2 == st and old == new: same += 1; continue
-        try: ks = diffkeys(json.loads(old), json.loads(new))
+        try:
+            ja, jb = canon(json.loads(old)), canon(json.loads(new))
+            if s2 == st and ja == jb: same += 1; 순서만 += 1; continue
+            ks = diffkeys(ja, jb)
         except Exception: ks = ["(JSON)"]
         if s2 != st: ks = [f"상태 {st}→{s2}"] + ks
         diff += 1
         for k in ks: 칸[f"{kind}:{k}"] = 칸.get(f"{kind}:{k}", 0) + 1
         if len(보기) < 15: 보기.append(f"{cid}/{kind}: {', '.join(ks[:6])}")
-    print(f"\n대조 {len(rows):,}건(단지×종류) · 같음 {same:,} · 다름 {diff:,} · 못 받음 {err} · {time.time()-t0:.0f}초")
+    print(f"\n대조 {len(rows):,}건(단지×종류) · 같음 {same:,}(그중 줄 순서만 다름 {순서만:,}) · 다름 {diff:,} · 못 받음 {err} · {time.time()-t0:.0f}초")
     if 칸:
         print("다른 칸(많은 순):")
         for k, n in sorted(칸.items(), key=lambda x: -x[1])[:25]: print(f"  {n:5,}  {k}")
