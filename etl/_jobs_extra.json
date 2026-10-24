@@ -1178,5 +1178,41 @@
     "svc_layers.py",
     "--only",
     "sg_cmap"
+  ],
+  "zq-inq-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_inq.sql"
+  ],
+  "zs-probe5-par": [
+    "python",
+    "svc_probe.py",
+    "54",
+    "--kinds",
+    "detail,geo,history,buildings,usage",
+    "--times",
+    "2"
+  ],
+  "zq-req-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_req.sql"
+  ],
+  "zd-cpu": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "(Get-Counter '\\Processor(_Total)\\% Processor Time' -SampleInterval 2 -MaxSamples 5).CounterSamples | % { [int]$_.CookedValue }; Get-Process cloudflared -ErrorAction SilentlyContinue | Select-Object Id,StartTime,CPU | Format-Table -AutoSize | Out-String; Get-Process node | Select-Object Id,StartTime,CPU,WS | Format-Table -AutoSize | Out-String"
+  ],
+  "zd-proc": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-CimInstance Win32_Process -Filter \"name='node.exe' or name='cmd.exe' or name='cloudflared.exe'\" | Select-Object ProcessId,ParentProcessId,CreationDate,CommandLine | Format-List | Out-String -Width 300; Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-20)} -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'node|Windows Error Reporting|Application Error' } | Select-Object TimeCreated,ProviderName,Id,Message | Format-List | Out-String -Width 300"
+  ],
+  "zd-nodever": [
+    "cmd",
+    "/c",
+    "node --version"
   ]
 }
