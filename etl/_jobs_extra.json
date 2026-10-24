@@ -692,8 +692,8 @@
   ],
   "zl-changelog-par": [
     "__SQL__",
-    "C:\\Project\\Teomoony\\deploy\\sql\\347_change_log_run.sql",
-    "347_change_log_run"
+    "C:\\Project\\Teomoony\\deploy\\sql\\348_change_log_zoning_run.sql",
+    "348_change_log_zoning_run"
   ],
   "hb-hub-test-par": [
     "python",
@@ -725,5 +725,24 @@
     "python",
     "load_hub.py",
     "--all"
+  ],
+  "vb-bldgis-test-par": [
+    "python",
+    "load_bld_gis.py",
+    "--sgg",
+    "11680",
+    "--rps",
+    "2",
+    "--max-rps",
+    "3"
+  ],
+  "vb-bldgis-all-par": [
+    "python",
+    "load_bld_gis.py",
+    "--skip-done",
+    "--rps",
+    "2",
+    "--max-rps",
+    "3"
   ]
 }
