@@ -1005,5 +1005,65 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\zz_probe_time.sql"
+  ],
+  "zq-sugg-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_sugg.sql"
+  ],
+  "zl-sugg-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "sg_*"
+  ],
+  "zs-svc-003": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\003_ko_ci.sql",
+    "select collname, collprovider, collisdeterministic from pg_collation where collname='ko_ci'"
+  ],
+  "sc-sugg-par": [
+    "python",
+    "svc_compare_sugg.py",
+    "--n",
+    "150"
+  ],
+  "zq-cols3-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cols3.sql"
+  ],
+  "sc-search-par": [
+    "python",
+    "svc_compare_sugg.py",
+    "--n",
+    "80",
+    "--path",
+    "/api/complexes"
+  ],
+  "zs-svc-004": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\004_idle_tx.sql",
+    "select pid, state, now()-xact_start, wait_event_type, left(query,80) from pg_stat_activity where datname='teomoony' and state <> 'idle' order by 3 desc nulls last limit 12"
+  ],
+  "zq-semas-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_semas.sql"
+  ],
+  "zs-semas-q": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select bizes_nm, brch_nm, \"주소\", ascii(substr(bizes_nm,2,1)) from svc.lyr_sg_semas where lower(bizes_nm) like lower('제1%') order by case when lower(bizes_nm)=lower('제1') then 0 else 1 end, bizes_nm collate svc.ko_ci nulls first, brch_nm collate svc.ko_ci nulls first, \"주소\" collate svc.ko_ci nulls first",
+    "select bizes_nm, brch_nm, \"주소\" from svc.lyr_sg_semas where lower(bizes_nm) like lower('종로구%') order by case when lower(bizes_nm)=lower('종로구') then 0 else 1 end, bizes_nm collate svc.ko_ci nulls first, brch_nm collate svc.ko_ci nulls first, \"주소\" collate svc.ko_ci nulls first"
+  ],
+  "zl-semas-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "sg_semas"
   ]
 }

@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--serve", type=int, default=0)
     a = ap.parse_args()
     e = env()
-    pg = psycopg.connect(host="127.0.0.1", port=15432, dbname="teomoony", user="teomoony", password=e["SVC_DB_PASSWORD"])
+    pg = psycopg.connect(host="127.0.0.1", port=15432, dbname="teomoony", user="teomoony", password=e["SVC_DB_PASSWORD"], autocommit=True)
     c = pg.cursor()
     c.execute("SELECT DISTINCT j.complex_id FROM svc.complex_json j WHERE j.kind = 'detail'")
     have = [r[0] for r in c.fetchall()]

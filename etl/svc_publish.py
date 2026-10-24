@@ -148,11 +148,21 @@ def publish_markers(ms, pg):
         c.execute("CREATE INDEX ix_marker_new_lnglat ON svc.complex_marker_new (centroid_lng, centroid_lat)")
         c.execute("CREATE INDEX ix_marker_new_ord ON svc.complex_marker_new (dong_cnt DESC, hhld_cnt_sum DESC)")
         c.execute("ANALYZE svc.complex_marker_new")
-        c.execute("DROP TABLE IF EXISTS svc.complex_marker")
-        c.execute("ALTER TABLE svc.complex_marker_new RENAME TO complex_marker")
-        c.execute("ALTER INDEX svc.ix_marker_new_lnglat RENAME TO ix_marker_lnglat")
-        c.execute("ALTER INDEX svc.ix_marker_new_ord RENAME TO ix_marker_ord")
     pg.commit()
+    import psycopg.errors   # 바꿔 끼우기는 짧게 + 잠금 3초 제한(svc_layers 와 같은 이유)
+    for 번 in range(20):
+        try:
+            with pg.cursor() as c:
+                c.execute("SET LOCAL lock_timeout = '3s'")
+                c.execute("DROP TABLE IF EXISTS svc.complex_marker")
+                c.execute("ALTER TABLE svc.complex_marker_new RENAME TO complex_marker")
+                c.execute("ALTER INDEX svc.ix_marker_new_lnglat RENAME TO ix_marker_lnglat")
+                c.execute("ALTER INDEX svc.ix_marker_new_ord RENAME TO ix_marker_ord")
+            pg.commit(); break
+        except psycopg.errors.LockNotAvailable:
+            pg.rollback(); time.sleep(5)
+    else:
+        raise RuntimeError("complex_marker: 바꿔 끼우기 잠금을 못 잡음")
     print(f"  지도 마커 {len(rows):,}곳 · {time.time() - t:.0f}초", flush=True)
     return len(rows)
 

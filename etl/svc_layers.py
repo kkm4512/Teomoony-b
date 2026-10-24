@@ -87,6 +87,10 @@ LAYERS = [
 ]
 
 
+from svc_suggest_src import SUGG
+LAYERS += SUGG   # 자동완성 원천(sg_*) — 같은 방식(새 표 → 바꿔 끼움 · 큰 표는 지문)
+
+
 def 값(v, 형):
     if v is None: return None
     if isinstance(v, Decimal): return float(v)
@@ -94,7 +98,7 @@ def 값(v, 형):
     return v
 
 
-def build(ms, pg, name, src_sql, cols, idx):
+def build(ms, pg, name, src_sql, cols, idx, post=()):
     t = time.time()
     tb = f"svc.lyr_{name}"
     cur = ms.cursor(); cur.execute(src_sql)
@@ -104,38 +108,58 @@ def build(ms, pg, name, src_sql, cols, idx):
     with pg.cursor() as c:
         c.execute(f"DROP TABLE IF EXISTS {tb}_new")
         c.execute(f"CREATE TABLE {tb}_new (" + ", ".join(f'"{k}" {v}' for k, v in cols) + ")")
-        with c.copy(f"COPY {tb}_new FROM STDIN") as cp:
+        k = len(cur.description)   # 원천 칸 수(뒤의 덧칸은 post 가 채운다)
+        with c.copy(f"COPY {tb}_new (" + ", ".join(f'"{x[0]}"' for x in cols[:k]) + ") FROM STDIN") as cp:
             while True:
                 rows = cur.fetchmany(5000)
                 if not rows: break
                 for r in rows:
                     cp.write_row([값(v, 형들[i]) for i, v in enumerate(r)])
                 n += len(rows)
+        for x in post:   # 채운 뒤 덧칸(예: 너비 무시 비교 키) — {t} = 새 표
+            c.execute(x.format(t=f"{tb}_new"))
         for i, ix in enumerate(idx):
             c.execute(f"CREATE INDEX ix_lyr_{name}_new_{i} ON {tb}_new {ix}")
         c.execute(f"ANALYZE {tb}_new")
-        c.execute(f"DROP TABLE IF EXISTS {tb}")
-        c.execute(f"ALTER TABLE {tb}_new RENAME TO lyr_{name}")
-        for i, _ in enumerate(idx):
-            c.execute(f"ALTER INDEX svc.ix_lyr_{name}_new_{i} RENAME TO ix_lyr_{name}_{i}")
     pg.commit()
+    # 바꿔 끼우기는 짧은 트랜잭션 + 잠금 3초 제한 — 누가 옛 표를 오래 쥐고 있으면(점검 스크립트 등) 기다리지 않고 물러났다 다시.
+    # (기다리면 그 뒤로 화면 읽기가 전부 줄을 선다 — 10-25 02:05 sg_sgg 290초)
+    import psycopg.errors
+    for 번 in range(20):
+        try:
+            with pg.cursor() as c:
+                c.execute("SET LOCAL lock_timeout = '3s'")
+                c.execute(f"DROP TABLE IF EXISTS {tb}")
+                c.execute(f"ALTER TABLE {tb}_new RENAME TO lyr_{name}")
+                for i, _ in enumerate(idx):
+                    c.execute(f"ALTER INDEX svc.ix_lyr_{name}_new_{i} RENAME TO ix_lyr_{name}_{i}")
+            pg.commit(); break
+        except psycopg.errors.LockNotAvailable:
+            pg.rollback(); time.sleep(5)
+    else:
+        raise RuntimeError(f"{tb}: 바꿔 끼우기 잠금을 못 잡음(100초)")
     return n, time.time() - t
 
 
 def run(ms, pg, force=(), only=()):
     with pg.cursor() as c:
+        c.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        # 이름 정렬: 적재DB(Korean_Wansung_CI_AS) 와 비슷하게 — 한글은 음절 순, 영문은 대소문자 구분 없이(level2)
+        c.execute("SELECT 1 FROM pg_collation WHERE collname = 'ko_ci' AND collnamespace = 'svc'::regnamespace")
+        if not c.fetchone(): c.execute("CREATE COLLATION svc.ko_ci (provider = icu, locale = 'ko-KR-u-ks-level2', deterministic = false)")
         c.execute("""CREATE TABLE IF NOT EXISTS svc.layer_state (layer text PRIMARY KEY, fingerprint text, rows int,
                       built_at timestamptz, secs real)""")
         c.execute("SELECT layer, fingerprint FROM svc.layer_state"); 전 = dict(c.fetchall())
     pg.commit()
-    for name, fp_sql, src, cols, idx in LAYERS:
-        if only and name not in only: continue
+    for spec in LAYERS:
+        name, fp_sql, src, cols, idx = spec[:5]; post = spec[5] if len(spec) > 5 else ()
+        if only and name not in only and not any(o.endswith('*') and name.startswith(o[:-1]) for o in only): continue
         fp = None
         if fp_sql:
             cur = ms.cursor(); cur.execute(fp_sql); fp = str(cur.fetchone()[0])
             if fp == 전.get(name) and name not in force:
                 print(f"  층 {name}: 원천 그대로 — 건너뜀", flush=True); continue
-        n, s = build(ms, pg, name, src, cols, idx)
+        n, s = build(ms, pg, name, src, cols, idx, post)
         with pg.cursor() as c:
             c.execute("""INSERT INTO svc.layer_state VALUES (%s, %s, %s, now(), %s)
                          ON CONFLICT (layer) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, rows = EXCLUDED.rows,

@@ -8,7 +8,7 @@ from svc_publish import env, fetch, TIMING
 from svc_compare import canon
 cid, kind = int(sys.argv[1]), sys.argv[2]; 앞 = sys.argv[3] if len(sys.argv) > 3 else ""
 e = env()
-pg = psycopg.connect(host="127.0.0.1", port=15432, dbname="teomoony", user="teomoony", password=e["SVC_DB_PASSWORD"])
+pg = psycopg.connect(host="127.0.0.1", port=15432, dbname="teomoony", user="teomoony", password=e["SVC_DB_PASSWORD"], autocommit=True)
 st, gz, at = pg.execute("SELECT status, body_gz, updated_at FROM svc.complex_json WHERE complex_id=%s AND kind=%s", (cid, kind)).fetchone()
 new = json.loads(TIMING.sub("", gzip.decompress(gz).decode(), count=1)); s2, old = fetch(cid, kind); old = json.loads(TIMING.sub("", old, count=1))
 print(f"{cid}/{kind} · 담은 때 {at} · 상태 {st}/{s2}")
