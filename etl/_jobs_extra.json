@@ -774,5 +774,121 @@
     "-NoProfile",
     "-Command",
     "docker exec teomoony-svc psql -U teomoony -d teomoony -v ON_ERROR_STOP=1 -c \"CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE SCHEMA IF NOT EXISTS svc; CREATE SCHEMA IF NOT EXISTS app;\" -c \"SELECT extname, extversion FROM pg_extension ORDER BY 1;\" -c \"SELECT version();\"; docker exec teomoony-redis redis-cli INFO memory | Select-String maxmemory_human,used_memory_human"
+  ],
+  "zd-svc-pkgs": [
+    "cmd",
+    "/c",
+    "cd /d C:\\Project\\Teomoony-f && npm.cmd install pg@8.13.1 --save --no-audit --no-fund && node -e \"console.log('pg', require('pg/package.json').version)\""
+  ],
+  "zs-svc-001": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\001_schema.sql",
+    "select table_schema||'.'||table_name from information_schema.tables where table_schema in ('svc','app') order by 1"
+  ],
+  "sp-test-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "ids",
+    "--ids",
+    "103835",
+    "518089",
+    "52914",
+    "1",
+    "--workers",
+    "2"
+  ],
+  "sp-full-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "full",
+    "--min-hhld",
+    "20",
+    "--workers",
+    "8"
+  ],
+  "sp-hourly-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "hourly",
+    "--workers",
+    "4"
+  ],
+  "sp-sample-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "full",
+    "--sample",
+    "60",
+    "--workers",
+    "4"
+  ],
+  "zs-svc-q": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select publish_id, kind, count(*), max(updated_at) from svc.complex_json where publish_id=3 group by 1,2 order by 3 desc"
+  ],
+  "sp-full2-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "full",
+    "--min-hhld",
+    "2",
+    "--workers",
+    "4"
+  ],
+  "sp-hourly0-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "hourly",
+    "--backlog",
+    "0",
+    "--workers",
+    "3"
+  ],
+  "zc-svc-cron-bg": [
+    "python",
+    "svc_cron.py"
+  ],
+  "zd-svc-pkgs2": [
+    "cmd",
+    "/c",
+    "cd /d C:\\Project\\Teomoony-f && npm.cmd install redis@4.7.0 --save --no-audit --no-fund"
+  ],
+  "sc-compare-par": [
+    "python",
+    "svc_compare.py",
+    "--random",
+    "60",
+    "--top",
+    "60"
+  ],
+  "sc-serve-par": [
+    "python",
+    "svc_compare.py",
+    "--random",
+    "30",
+    "--top",
+    "10",
+    "--serve",
+    "20"
+  ],
+  "zk-kill-svcpub": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'svc_publish' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zs-svc-002": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\002_fix_pub3.sql"
   ]
 }

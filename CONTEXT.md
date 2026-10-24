@@ -10972,3 +10972,19 @@ v_lawd_map 3개 동         5,568ms → 37ms
 - 서비스DB: 확장 postgis · pg_trgm · 스키마 svc(발행) · app(쓰기). RG(350)는 재시작 뒤에도 켜짐.
 - 재시작 때 끊은 작업(건축HUB 넣기 · 관리비 과거 · 시범 대장)은 다시 걸어 이어서. 관리비는 --rps 8(합 32/초) — 2015.12 까지 4구 · 24달에 4시간 → 이대로면 서울 전체 3주 가까이.
 - 토지특성 적재 끝(22:30): 필지 924,779 · 1,254만 줄 · 2013~2026. 용도지역 변경 로그 다시: 바뀜 99,817 · 흔들림 2,745. 값 없는 필지 8,860(도로 등 — 다시 확인은 보류).
+
+### 11-273 서비스DB 1단계 — 단지별 응답을 서비스DB 에서 (2026-10-24 23:30~, 사장님 "3번 너가 확인하고 큰 문제없으면 4번 진행 · 난 잘게")
+- 길: 단지 하나로 결과가 정해지는 응답 11종(detail · geo · buildings · history · usage · landuse · landuse-shape · childcare · pharmacy · hira · closed)을
+  **지금 서버가 만드는 JSON 그대로** gzip 으로 svc.complex_json 에 담는다(etl/svc_publish.py). 값이 같다는 게 처음부터 보장 · 화면 코드 그대로.
+  상세는 ?_t=1(서버 캐시 피함)로 받고 진단 시간표 _timing 만 뗀다. 나머지는 ?_svcbuild=1. sha256 이 같으면 안 바꿈.
+- 서비스DB 표(deploy/svc/pg/001): svc.publish(발행 기록 · 기준선) · svc.complex_json · svc.complex_list(단지 57만 · 세대 · 시군구) · app.cache_stat.
+- 서버(Teomoony-f/src/svc.js): 물음표 없는 /api/complexes/:id(/종류) → Redis(t:{판}:{종류}:{단지}, 50ms) → 서비스DB → 없으면 기존 경로(next).
+  차단기(5번 실패 → 30초 건너뜀). 켜기/끄기 = Teomoony-f/svc_mode.json {"read": true|false}(10초마다 읽음) — **되돌리기 한 줄**.
+  Redis 미리 채움: 판(마지막 ok 발행 번호)이 바뀌면 수도권(11·28·41) 500세대+ 상세. 적중 기록 app.cache_stat(1분).
+- 첫 채우기: 세대 20+ 단지 11,400곳 · 124,334건(큰 단지부터) — 8 동시 초당 약 4건 → 9시간. 0~1세대 46만 곳(단독 등)은 열릴 때 기존 경로.
+  세대 2~19(10만 곳)는 그다음(sp-full2-par).
+- 1시간마다: etl/svc_cron.py(뒷줄)가 매시 05분 sp-hourly(-0)-par 를 놓는다 — 지난 기준선 뒤 바뀐 단지(실거래 loaded_at · 관리비 · 인허가 · 표제부 · 위반 · 용도지역 바뀜)만 다시.
+  ★ 감시기 재시작은 모든 줄이 빌 때만 돼서 감시기 안에 넣지 않고 따로 돌린다.
+- 대조: etl/svc_compare.py(무작위 + 수도권 큰 단지 · 칸별 다른 곳) · --serve 로 화면 길이 서비스DB 에서 나가는지(X-Svc).
+- 아직 적재DB: 검색 · 지도 마커 · 지도 범위 조회(2단계 — PG 쿼리로 새로).
+- 설치(사장님 범위 안): npm pg@8.13.1 · redis@4.7.0(npm.ps1 은 실행 정책에 막혀 npm.cmd 로) · pip psycopg[binary] 3.2.3.
