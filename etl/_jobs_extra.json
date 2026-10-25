@@ -1214,5 +1214,40 @@
     "cmd",
     "/c",
     "node --version"
+  ],
+  "zq-nat-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_nat.sql"
+  ],
+  "zq-size-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_size.sql"
+  ],
+  "zd-disk": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-PSDrive -PSProvider FileSystem | Select-Object Name,@{n='UsedGB';e={[int]($_.Used/1GB)}},@{n='FreeGB';e={[int]($_.Free/1GB)}} | Format-Table -AutoSize | Out-String"
+  ],
+  "hl-hub-reg-par": [
+    "python",
+    "hub_order.py"
+  ],
+  "hl-hub-latest-par": [
+    "python",
+    "hub_latest_after.py"
+  ],
+  "zt-hublatest-par": [
+    "python",
+    "hub_latest.py",
+    "--code",
+    "0302"
+  ],
+  "zq-hubcmp-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hubcmp.sql"
   ]
 }
