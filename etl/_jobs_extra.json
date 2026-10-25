@@ -1417,5 +1417,229 @@
     "-NoProfile",
     "-Command",
     "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'zz_probe_hubdiff5' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zq-swap-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_swap.sql"
+  ],
+  "hs-hub-build-par": [
+    "python",
+    "hub_swap.py",
+    "build"
+  ],
+  "hs-hub-check": [
+    "python",
+    "hub_swap.py",
+    "check"
+  ],
+  "zd-def": [
+    "python",
+    "dump_def.py",
+    "gold.usp_build_complexes"
+  ],
+  "zq-atchdup-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_atchdup.sql"
+  ],
+  "zq-atchdup2-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_atchdup2.sql"
+  ],
+  "hs-hub-build2-par": [
+    "python",
+    "hub_swap.py",
+    "build",
+    "bld_flr_outline",
+    "bld_expos",
+    "bld_basis_outline",
+    "bld_expos_pubuse_area",
+    "bld_hsprc"
+  ],
+  "hs-fixuq-par": [
+    "python",
+    "hub_swap_fixuq.py",
+    "bld_atch_jibun",
+    "bld_jijigu"
+  ],
+  "zq-req": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_req.sql"
+  ],
+  "zq-blk": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_blk.sql"
+  ],
+  "zq-cadix": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cadix.sql"
+  ],
+  "zt-vwlike-par": [
+    "python",
+    "zz_vw_like_test.py",
+    "12130141",
+    "11290138"
+  ],
+  "zq-cadrate": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cadrate.sql"
+  ],
+  "zt-cad1": [
+    "python",
+    "load_cadastral.py",
+    "--lawd",
+    "11290138",
+    "--no-refresh"
+  ],
+  "zq-cad1": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cad1.sql"
+  ],
+  "zk-kill-hubswap": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'hub_swap' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zk-kill-spfull": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'svc_publish.py --mode full' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "hs-hub-build3-par": [
+    "python",
+    "hub_swap.py",
+    "build",
+    "bld_flr_outline",
+    "bld_expos_pubuse_area",
+    "bld_hsprc"
+  ],
+  "zs-cad-wide": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\355_cadastral_bonbun_wide.sql"
+  ],
+  "zr-mssql-restart-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker ps --format '{{.Names}} {{.Status}}'; docker restart -t 60 teomoony-mssql; Start-Sleep 45; docker ps --format '{{.Names}} {{.Status}}'; docker exec teomoony-mssql df -h /var/opt/mssql/data; Get-PSDrive C | Select-Object Used,Free"
+  ],
+  "zr-docker-restart-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-Process docker -ErrorAction SilentlyContinue | Stop-Process -Force; Get-Process 'Docker Desktop','com.docker.backend','com.docker.build' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 15; Start-Process \"$env:LOCALAPPDATA\\Programs\\DockerDesktop\\Docker Desktop.exe\"; for ($i = 0; $i -lt 40; $i++) { Start-Sleep 15; $o = docker ps --format '{{.Names}} {{.Status}}' 2>$null; if ($LASTEXITCODE -eq 0 -and $o) { $o; break } else { 'wait ' + $i } }; Get-PSDrive C | Select-Object Used,Free"
+  ],
+  "zr-docker-diag-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "wsl -l -v; Get-PSDrive C | Select-Object Used,Free; Get-ChildItem \"$env:LOCALAPPDATA\\Docker\\wsl\" -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName,@{n='GB';e={[math]::Round($_.Length/1GB,1)}}; $l = Get-ChildItem \"$env:LOCALAPPDATA\\Docker\\log\\host\" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 3; $l | Select-Object Name,LastWriteTime; Get-Content ($l[0].FullName) -Tail 40"
+  ],
+  "zr-docker-diag2-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-ChildItem \"$env:LOCALAPPDATA\\Docker\" -Recurse -Include *.vhdx -ErrorAction SilentlyContinue | Select-Object FullName,@{n='GB';e={[math]::Round($_.Length/1GB,1)}} | Format-Table -AutoSize | Out-String -Width 300; Get-ChildItem \"$env:LOCALAPPDATA\\Docker\\log\" -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 6 FullName,LastWriteTime | Format-Table -AutoSize | Out-String -Width 300; $f = Get-ChildItem \"$env:LOCALAPPDATA\\Docker\\log\\host\" -Filter 'com.docker.backend*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; Select-String -Path $f.FullName -Pattern 'error|failed|no space|ENOSPC' | Select-Object -Last 25 | ForEach-Object { $_.Line.Substring(0, [math]::Min(250, $_.Line.Length)) }"
+  ],
+  "zr-docker-diag3-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$f = \"$env:LOCALAPPDATA\\Docker\\log\\host\\com.docker.backend.exe.log\"; Select-String -Path $f -Pattern 'bootstrap|mount|vhdx|space|fsck|ext4|\\[E\\]|\\[W\\]' | Where-Object { $_.Line -like '*2026-10-25T21:3*' -or $_.Line -like '*2026-10-25T21:4*' } | Select-Object -First 60 | ForEach-Object { $_.Line.Substring(0, [math]::Min(300, $_.Line.Length)) }"
+  ],
+  "zr-docker-diag4-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$f = \"$env:LOCALAPPDATA\\Docker\\log\\host\\com.docker.backend.exe.log\"; Select-String -Path $f -Pattern 'wsl-bootstrap|ExecError|exit status|Input/output|read-only|corrupt|No space' | Where-Object { $_.Line -like '*2026-10-25T21:3*' } | Select-Object -First 40 | ForEach-Object { $_.Line.Substring(0, [math]::Min(400, $_.Line.Length)) }"
+  ],
+  "zr-docker-diag5-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "wsl -d docker-desktop -u root -e sh -c 'blkid; echo ---; df -h; echo ---; mount | grep -E \"sd[a-z]\"; echo ---; dmesg | grep -iE \"ext4|sdd|error|space\" | tail -30'"
+  ],
+  "zr-space-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "function S($p){ if (Test-Path $p) { $s = (Get-ChildItem $p -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum; '{0,8:N1} GB  {1}' -f ($s/1GB), $p } }; S $env:TEMP; S \"$env:LOCALAPPDATA\\npm-cache\"; S \"$env:LOCALAPPDATA\\pip\\cache\"; S \"$env:LOCALAPPDATA\\Docker\"; S \"$env:LOCALAPPDATA\\Packages\"; S \"$env:USERPROFILE\\Downloads\"; S \"$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache\"; S 'C:\\Windows\\Temp'; S \"$env:LOCALAPPDATA\\CrashDumps\"; S \"$env:APPDATA\\Claude\"; S \"$env:LOCALAPPDATA\\Claude\"; Get-ChildItem C:\\ -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object { S $_.FullName }"
+  ],
+  "zr-docker-stop-check-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-Process 'Docker Desktop','com.docker.backend','com.docker.build','docker' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 10; wsl --shutdown; Start-Sleep 10; wsl -l -v; py vhdx_check.py; Get-PSDrive C | Select-Object Used,Free"
+  ],
+  "zr-docker-start-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Start-Process \"$env:LOCALAPPDATA\\Programs\\DockerDesktop\\Docker Desktop.exe\"; for ($i = 0; $i -lt 30; $i++) { Start-Sleep 10; $o = docker ps -a --format '{{.Names}} {{.Status}}' 2>$null; if ($LASTEXITCODE -eq 0 -and $o) { $o; break } else { 'wait ' + $i } }; docker system df; Get-PSDrive C | Select-Object Used,Free"
+  ],
+  "zr-fstrim-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$v = \"$env:LOCALAPPDATA\\Docker\\wsl\\disk\\docker_data.vhdx\"; fsutil sparse queryflag $v; wsl -d docker-desktop -u root -e sh -c 'df -h | grep -E \"/dev/sd|Filesystem\"; fstrim -av 2>&1'; Start-Sleep 20; 'vhdx GB: ' + [math]::Round((Get-Item $v).Length/1GB,1); Get-PSDrive C | Select-Object Used,Free"
+  ],
+  "zq-health": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_health.sql"
+  ],
+  "hs-hub-build4-par": [
+    "python",
+    "hub_swap.py",
+    "build",
+    "bld_expos_pubuse_area",
+    "bld_hsprc",
+    "--resume"
+  ],
+  "zg-diskguard-par": [
+    "python",
+    "disk_guard.py",
+    "--stop",
+    "25",
+    "--warn",
+    "50"
+  ],
+  "zr-isadmin": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); Get-Command Optimize-VHD -ErrorAction SilentlyContinue | Select-Object Name; Get-PSDrive C | Select-Object Free"
+  ],
+  "zr-sparse": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$v = \"$env:LOCALAPPDATA\\Docker\\wsl\\disk\\docker_data.vhdx\"; $p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'hub_swap|load_cadastral|nation_lawd|rtms_nation|load_rtms|kapt_cost|nation_sgg|load_kapt|svc_publish' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; Start-Sleep 5; Get-Process 'Docker Desktop','com.docker.backend','com.docker.build','docker' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 10; wsl --shutdown; Start-Sleep 10; wsl -l -v; fsutil sparse setflag $v; fsutil sparse queryflag $v; Start-Process \"$env:LOCALAPPDATA\\Programs\\DockerDesktop\\Docker Desktop.exe\"; for ($i = 0; $i -lt 30; $i++) { Start-Sleep 10; $o = docker ps -a --format '{{.Names}} {{.Status}}' 2>$null; if ($LASTEXITCODE -eq 0 -and $o) { $o; break } else { 'wait ' + $i } }; Start-Sleep 20; wsl -d docker-desktop -u root -e fstrim -av; Start-Sleep 30; 'vhdx 크기 GB: ' + [math]::Round((Get-Item $v).Length/1GB,1); $f = (Get-PSDrive C).Free; 'C 남은 GB: ' + [math]::Round($f/1GB,1)"
+  ],
+  "zr-fstrim": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$v = \"$env:LOCALAPPDATA\\Docker\\wsl\\disk\\docker_data.vhdx\"; wsl -d docker-desktop -u root -e sh -c 'fstrim -av 2>&1'; Start-Sleep 30; 'vhdx size GB: ' + [math]::Round((Get-Item $v).Length/1GB,1); 'on-disk GB: ' + (fsutil file layout $v | Select-String 'Allocated' | Select-Object -First 1); 'C free GB: ' + [math]::Round((Get-PSDrive C).Free/1GB,1)"
+  ],
+  "zq-space": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_space.sql"
+  ],
+  "zs-tempdb-cap": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\356_tempdb_cap.sql"
   ]
 }

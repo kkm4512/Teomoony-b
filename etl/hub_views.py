@@ -96,13 +96,22 @@ AREA_IN = [("mgm_bldrgst_pk", PK), ("dong_nm", NV("동_명", 100)), ("ho_nm", NV
              ("pnu", PNU("시군구_코드", "법정동_코드", "대지_구분_코드", "번", "지"))]
 AREA_KEY = ["mgm_bldrgst_pk", "expos_pubuse_gb_cd", "main_atch_gb_cd", "flr_gb_cd", "flr_no", "main_purps_cd", "strct_cd"]
 
+# 합칠 때 글자를 하나만 고르지 않고 모두 잇는 칸 (2026-10-25 사장님 "너 말한대로 ㄱㄱ") — 구획마다 다른 기타용도·기타구조를
+#   아무 하나만 남기면 면적은 합쳤는데 글자는 '주차장'만 보이는 식이 된다. 서로 다른 값만 ' · ' 로 잇는다(원본 글자 그대로).
+#   ★ 한 묶음 안의 STRING_AGG 는 순서가 같아야 한다(8711) — 둘 다 (기타용도, 기타구조) 순. 기타구조는 그 값이 처음 나온 줄의 기타용도 순.
+JOIN_TXT = ("etc_purps", "etc_strct")
+
 def merged(name, src, inner, key, sk, where, 처음):
-    ins = ",\n         ".join(f"{expr} AS [{c}]" for c, expr in inner)
+    part = ", ".join(f"[{k}]" for k in key)
+    ins = ",\n         ".join([f"{expr} AS [{c}]" for c, expr in inner] +
+                              [f"ROW_NUMBER() OVER (PARTITION BY {', '.join(dict(inner)[k] for k in key)}, {dict(inner)[c]} ORDER BY {', '.join(dict(inner)[j] for j in JOIN_TXT if j in dict(inner))}) AS [rn_{c}]"
+                               for c in JOIN_TXT if c in dict(inner)])
     outs = []
     for c, _ in inner:
         if c in ("처음월", "행_sk"): continue
         if c in key: outs.append(f"x.[{c}]")
         elif c == "area": outs.append("CAST(SUM(x.area) AS DECIMAL(19, 5)) AS area")
+        elif c in JOIN_TXT: outs.append(f"STRING_AGG(CASE WHEN x.[rn_{c}] = 1 THEN CAST(x.[{c}] AS NVARCHAR(MAX)) END, N' · ') WITHIN GROUP (ORDER BY {', '.join(f'x.[{j}]' for j in JOIN_TXT if j in dict(inner))}) AS [{c}]")
         else: outs.append(f"MIN(x.[{c}]) AS [{c}]")
     outs += [f"MIN(x.[행_sk]) AS [{sk}]", "CAST(COUNT(*) AS INT) AS seg_cnt", "CAST(NULL AS BINARY(32)) AS row_hash", "CAST(NULL AS BIGINT) AS src_run_id",
              f"{처음} AS valid_from", "CAST('9999-12-31' AS DATETIME2(0)) AS valid_to", "CAST(1 AS BIT) AS is_current"]

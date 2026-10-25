@@ -131,6 +131,31 @@ def _notify(title, lines):
         print(f"[알림] 실패 - {type(e).__name__}: {e}")
 
 
+
+COLS = ["pnu", "jibun", "bonbun", "bubun", "addr", "jiga", "gosi_year", "gosi_month", "geojson",
+        "centroid_lat", "centroid_lng", "bbox_minx", "bbox_miny", "bbox_maxx", "bbox_maxy"]
+
+def 묶어넣기(cur, 묶음):
+    """★ 2026-10-25 법정동 하나를 한꺼번에: 임시표에 여러 줄씩 넣고 → 바뀐 것만 닫고 → 없는 것만 넣는다(집합 한 번).
+       전에는 필지마다 문장 두 개(오가기 2번)라 전국 4,500 읍면동에 9일이 걸릴 셈이었다. 결과(SCD: 같으면 그대로 · 다르면 닫고 새 줄)는 같다."""
+    cur.execute("IF OBJECT_ID('tempdb..#p') IS NOT NULL DROP TABLE #p")
+    cur.execute("SELECT TOP 0 " + ", ".join(COLS) + ", row_hash INTO #p FROM silver.cadastral_parcel")
+    cur.execute("ALTER TABLE #p ADD wkt NVARCHAR(MAX) NULL")
+    rows = [tuple(v[c] for c in COLS) + (rh, w) for v, rh, w in 묶음.values()]
+    per = max(1, 2000 // (len(COLS) + 2))
+    for i in range(0, len(rows), per):
+        part = rows[i:i + per]
+        ph = ", ".join("(" + ", ".join(["%s"] * (len(COLS) + 2)) + ")" for _ in part)
+        cur.execute(f"INSERT INTO #p ({', '.join(COLS)}, row_hash, wkt) VALUES {ph}", tuple(x for r in part for x in r))
+    cur.execute("""UPDATE c SET is_current = 0, valid_to = SYSDATETIME()
+                     FROM silver.cadastral_parcel c JOIN #p p ON p.pnu = c.pnu
+                    WHERE c.is_current = 1 AND c.row_hash <> p.row_hash""")
+    cur.execute(f"""INSERT INTO silver.cadastral_parcel ({', '.join(COLS)}, geom, row_hash)
+                    SELECT {', '.join('p.' + c for c in COLS)}, geometry::STGeomFromText(p.wkt, 4326).MakeValid(), p.row_hash
+                      FROM #p p WHERE NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel c WHERE c.is_current = 1 AND c.pnu = p.pnu)""")
+    return len(rows)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lawd", nargs="*", help="법정동코드 10자리. 생략하면 단지가 참조하는 전부")
@@ -192,11 +217,15 @@ def main():
     for lawd in lawds:
         feats = fetch_lawd(key, lawd)
         print(f"  {lawd}  {len(feats):5d} 필지", end="")
-        n = 0
+        n = 0; 남의 = 0; 묶음 = {}
         for f in feats:
             pr = f.get("properties", {}) or {}
             pnu = (pr.get("pnu") or "").strip()
             if len(pnu) != 19:
+                continue
+            # ★ 2026-10-25 안전장치: 이 법정동으로 시작하는 필지만(VWorld like 는 앞자리 일치로 확인했다 — 12130141 · 11290138 다른 것 0).
+            if not pnu.startswith(lawd):
+                남의 += 1
                 continue
             geom = f.get("geometry") or {}
             if geom.get("type") != "MultiPolygon":
@@ -218,27 +247,25 @@ def main():
             rh = hashlib.sha256(
                 "\x1f".join(str(vals[k]) for k in sorted(vals)).encode("utf-8")).digest()
 
+            if not args.no_geom:
+                묶음[pnu] = (vals, rh, wkt(coords))   # 같은 pnu 가 두 번 오면 뒤의 것
+                continue
+            # ★ 2026-10-25 pnu 는 CHAR(19) 인데 pymssql 은 글자를 N'…'(NVARCHAR) 로 보낸다 → CHAR(19) 로 맞춰 넘긴다(색인을 바로 찾게).
             cur.execute("""UPDATE silver.cadastral_parcel
                               SET is_current=0, valid_to=SYSDATETIME()
-                            WHERE is_current=1 AND pnu=%s AND row_hash<>%s""", (pnu, rh))
+                            WHERE is_current=1 AND pnu=CAST(%s AS CHAR(19)) AND row_hash<>%s""", (pnu, rh))
             cols = list(vals.keys())
-            if args.no_geom:
-                sql = (f"IF NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel "
-                       f"WHERE is_current=1 AND pnu=%s) "
-                       f"INSERT INTO silver.cadastral_parcel ({', '.join(cols)}, row_hash) "
-                       f"VALUES ({', '.join(['%s']*len(cols))}, %s)")
-                cur.execute(sql, (pnu,) + tuple(vals[c] for c in cols) + (rh,))
-            else:
-                sql = (f"IF NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel "
-                       f"WHERE is_current=1 AND pnu=%s) "
-                       f"INSERT INTO silver.cadastral_parcel ({', '.join(cols)}, geom, row_hash) "
-                       f"VALUES ({', '.join(['%s']*len(cols))}, "
-                       f"geometry::STGeomFromText(%s, 4326).MakeValid(), %s)")
-                cur.execute(sql, (pnu,) + tuple(vals[c] for c in cols) + (wkt(coords), rh))
+            sql = (f"IF NOT EXISTS (SELECT 1 FROM silver.cadastral_parcel "
+                   f"WHERE is_current=1 AND pnu=CAST(%s AS CHAR(19))) "
+                   f"INSERT INTO silver.cadastral_parcel ({', '.join(cols)}, row_hash) "
+                   f"VALUES ({', '.join(['%s']*len(cols))}, %s)")
+            cur.execute(sql, (pnu,) + tuple(vals[c] for c in cols) + (rh,))
             n += 1
+        if 묶음:
+            n += 묶어넣기(cur, 묶음)
         conn.commit()
         total_new += n
-        print(f"  -> {n} 적재")
+        print(f"  -> {n} 적재" + (f" · 다른 법정동 필지 {남의:,} 건너뜀" if 남의 else ""))
 
     if args.no_refresh:
         print(f"\n새 필지 {total_new:,} — 단지 좌표 재계산은 건너뜀(--no-refresh)"); return

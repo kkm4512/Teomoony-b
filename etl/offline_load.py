@@ -12,6 +12,15 @@ import pymssql
 
 # 비밀번호를 소스에 박지 않는다. .env 의 DB_PASSWORD 를 읽고, 없으면 환경변수.
 # (2026-10-16: 여기 평문으로 들어 있던 것을 걷어냈다. 다른 적재기들은 .env 를 쓴다)
+
+HUB_BLD = {"silver.bld_basis_outline", "silver.bld_title", "silver.bld_recap_title", "silver.bld_atch_jibun", "silver.bld_expos",
+           "silver.bld_jijigu", "silver.bld_flr_outline", "silver.bld_expos_pubuse_area", "silver.bld_hsprc"}
+def hub_guard(t):
+    """2026-10-25 대장 9종은 허브 파일에서 만든 표(hub_swap.py)로 바꿔 끼웠다 — API 로 받은 줄을 거기 섞지 않는다."""
+    import os
+    if t in HUB_BLD and os.environ.get("ALLOW_API_BLD") != "1":
+        raise SystemExit(f"{t} 는 허브 대장 표입니다 — API 대장 적재는 멈췄습니다(hub_swap.py). 꼭 필요하면 ALLOW_API_BLD=1")
+
 def _env(path=os.path.join(os.path.dirname(__file__), "..", ".env")):
     d = {}
     if os.path.exists(path):
@@ -169,6 +178,7 @@ def load(op, spec, cur):
             m[spec["pnu_col"]] = cur.fetchone()[0]
 
         keys = spec["keys"]
+        hub_guard(spec["target"])
         if any(m.get(k) in (None, "") for k in keys):
             continue
         rh = rowhash(m, cols)

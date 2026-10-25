@@ -299,10 +299,10 @@ SELECT x.[mgm_bldrgst_pk],
        MIN(x.[flr_no_nm]) AS [flr_no_nm],
        x.[strct_cd],
        MIN(x.[strct_nm]) AS [strct_nm],
-       MIN(x.[etc_strct]) AS [etc_strct],
+       STRING_AGG(CASE WHEN x.[rn_etc_strct] = 1 THEN CAST(x.[etc_strct] AS NVARCHAR(MAX)) END, N' · ') WITHIN GROUP (ORDER BY x.[etc_purps], x.[etc_strct]) AS [etc_strct],
        x.[main_purps_cd],
        MIN(x.[main_purps_nm]) AS [main_purps_nm],
-       MIN(x.[etc_purps]) AS [etc_purps],
+       STRING_AGG(CASE WHEN x.[rn_etc_purps] = 1 THEN CAST(x.[etc_purps] AS NVARCHAR(MAX)) END, N' · ') WITHIN GROUP (ORDER BY x.[etc_purps], x.[etc_strct]) AS [etc_purps],
        CAST(SUM(x.area) AS DECIMAL(19, 5)) AS area,
        MIN(x.[area_excl_yn]) AS [area_excl_yn],
        MIN(x.[dong_nm]) AS [dong_nm],
@@ -336,7 +336,9 @@ SELECT x.[mgm_bldrgst_pk],
          CAST(NULLIF(LTRIM(RTRIM([주_부속_구분_코드_명])), N'') AS NVARCHAR(40)) AS [main_atch_gb_nm],
          CAST(NULLIF(LTRIM(RTRIM([생성_일자])), N'') AS CHAR(8)) AS [crtn_day],
          CAST(NULL AS CHAR(6)) AS [처음월],
-         CAST(NULL AS BIGINT) AS [행_sk]
+         CAST(NULL AS BIGINT) AS [행_sk],
+         ROW_NUMBER() OVER (PARTITION BY [관리_건축물대장_PK], CAST(NULLIF(LTRIM(RTRIM([층_구분_코드])), N'') AS VARCHAR(2)), TRY_CONVERT(INT, TRY_CONVERT(DECIMAL(38, 9), NULLIF(LTRIM(RTRIM([층_번호])), N''))), CAST(NULLIF(LTRIM(RTRIM([주_용도_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([구조_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([주_부속_구분_코드])), N'') AS VARCHAR(2)), CAST(NULLIF(LTRIM(RTRIM([기타_용도])), N'') AS NVARCHAR(400)) ORDER BY CAST(NULLIF(LTRIM(RTRIM([기타_용도])), N'') AS NVARCHAR(400)), CAST(NULLIF(LTRIM(RTRIM([기타_구조])), N'') AS NVARCHAR(200))) AS [rn_etc_purps],
+         ROW_NUMBER() OVER (PARTITION BY [관리_건축물대장_PK], CAST(NULLIF(LTRIM(RTRIM([층_구분_코드])), N'') AS VARCHAR(2)), TRY_CONVERT(INT, TRY_CONVERT(DECIMAL(38, 9), NULLIF(LTRIM(RTRIM([층_번호])), N''))), CAST(NULLIF(LTRIM(RTRIM([주_용도_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([구조_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([주_부속_구분_코드])), N'') AS VARCHAR(2)), CAST(NULLIF(LTRIM(RTRIM([기타_구조])), N'') AS NVARCHAR(200)) ORDER BY CAST(NULLIF(LTRIM(RTRIM([기타_용도])), N'') AS NVARCHAR(400)), CAST(NULLIF(LTRIM(RTRIM([기타_구조])), N'') AS NVARCHAR(200))) AS [rn_etc_strct]
           FROM hub.l0304) x
  GROUP BY x.[mgm_bldrgst_pk], x.[flr_gb_cd], x.[flr_no], x.[main_purps_cd], x.[strct_cd], x.[main_atch_gb_cd];
 GO
@@ -350,10 +352,10 @@ SELECT x.[mgm_bldrgst_pk],
        x.[main_atch_gb_cd],
        x.[strct_cd],
        MIN(x.[strct_nm]) AS [strct_nm],
-       MIN(x.[etc_strct]) AS [etc_strct],
+       STRING_AGG(CASE WHEN x.[rn_etc_strct] = 1 THEN CAST(x.[etc_strct] AS NVARCHAR(MAX)) END, N' · ') WITHIN GROUP (ORDER BY x.[etc_purps], x.[etc_strct]) AS [etc_strct],
        x.[main_purps_cd],
        MIN(x.[main_purps_nm]) AS [main_purps_nm],
-       MIN(x.[etc_purps]) AS [etc_purps],
+       STRING_AGG(CASE WHEN x.[rn_etc_purps] = 1 THEN CAST(x.[etc_purps] AS NVARCHAR(MAX)) END, N' · ') WITHIN GROUP (ORDER BY x.[etc_purps], x.[etc_strct]) AS [etc_purps],
        CAST(SUM(x.area) AS DECIMAL(19, 5)) AS area,
        MIN(x.[crtn_day]) AS [crtn_day],
        MIN(x.[sigungu_cd]) AS [sigungu_cd],
@@ -398,7 +400,9 @@ SELECT x.[mgm_bldrgst_pk],
          CAST(NULLIF(LTRIM(RTRIM([대장_구분_코드])), N'') AS VARCHAR(2)) AS [regstr_gb_cd],
          CAST(NULLIF(LTRIM(RTRIM([대장_종류_코드])), N'') AS VARCHAR(2)) AS [regstr_kind_cd],
          CASE WHEN LEN(NULLIF(LTRIM(RTRIM([시군구_코드])), N'')) = 5 AND LEN(NULLIF(LTRIM(RTRIM([법정동_코드])), N'')) = 5 AND (NULLIF(LTRIM(RTRIM([번])), N'') IS NULL OR TRY_CAST(NULLIF(LTRIM(RTRIM([번])), N'') AS INT) IS NOT NULL) AND (NULLIF(LTRIM(RTRIM([지])), N'') IS NULL OR TRY_CAST(NULLIF(LTRIM(RTRIM([지])), N'') AS INT) IS NOT NULL) THEN CAST(NULLIF(LTRIM(RTRIM([시군구_코드])), N'') + NULLIF(LTRIM(RTRIM([법정동_코드])), N'') + CASE LTRIM(RTRIM(ISNULL([대지_구분_코드], N'0'))) WHEN N'1' THEN N'2' ELSE N'1' END + RIGHT(N'0000' + CAST(ISNULL(TRY_CAST(NULLIF(LTRIM(RTRIM([번])), N'') AS INT), 0) AS NVARCHAR(10)), 4) + RIGHT(N'0000' + CAST(ISNULL(TRY_CAST(NULLIF(LTRIM(RTRIM([지])), N'') AS INT), 0) AS NVARCHAR(10)), 4) AS CHAR(19)) END AS [pnu],
-         CAST(NULL AS BIGINT) AS [행_sk]
+         CAST(NULL AS BIGINT) AS [행_sk],
+         ROW_NUMBER() OVER (PARTITION BY [관리_건축물대장_PK], CAST(NULLIF(LTRIM(RTRIM([전유_공용_구분_코드])), N'') AS VARCHAR(2)), CAST(NULLIF(LTRIM(RTRIM([주_부속_구분_코드])), N'') AS VARCHAR(2)), CAST(NULLIF(LTRIM(RTRIM([층_구분_코드])), N'') AS VARCHAR(2)), TRY_CONVERT(INT, TRY_CONVERT(DECIMAL(38, 9), NULLIF(LTRIM(RTRIM([층_번호])), N''))), CAST(NULLIF(LTRIM(RTRIM([주_용도_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([구조_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([기타_용도])), N'') AS NVARCHAR(400)) ORDER BY CAST(NULLIF(LTRIM(RTRIM([기타_용도])), N'') AS NVARCHAR(400)), CAST(NULLIF(LTRIM(RTRIM([기타_구조])), N'') AS NVARCHAR(200))) AS [rn_etc_purps],
+         ROW_NUMBER() OVER (PARTITION BY [관리_건축물대장_PK], CAST(NULLIF(LTRIM(RTRIM([전유_공용_구분_코드])), N'') AS VARCHAR(2)), CAST(NULLIF(LTRIM(RTRIM([주_부속_구분_코드])), N'') AS VARCHAR(2)), CAST(NULLIF(LTRIM(RTRIM([층_구분_코드])), N'') AS VARCHAR(2)), TRY_CONVERT(INT, TRY_CONVERT(DECIMAL(38, 9), NULLIF(LTRIM(RTRIM([층_번호])), N''))), CAST(NULLIF(LTRIM(RTRIM([주_용도_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([구조_코드])), N'') AS VARCHAR(10)), CAST(NULLIF(LTRIM(RTRIM([기타_구조])), N'') AS NVARCHAR(200)) ORDER BY CAST(NULLIF(LTRIM(RTRIM([기타_용도])), N'') AS NVARCHAR(400)), CAST(NULLIF(LTRIM(RTRIM([기타_구조])), N'') AS NVARCHAR(200))) AS [rn_etc_strct]
           FROM hub.l0306) x
  GROUP BY x.[mgm_bldrgst_pk], x.[expos_pubuse_gb_cd], x.[main_atch_gb_cd], x.[flr_gb_cd], x.[flr_no], x.[main_purps_cd], x.[strct_cd];
 GO

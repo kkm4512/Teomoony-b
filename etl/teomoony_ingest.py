@@ -375,6 +375,15 @@ FLOAT_EXACT   = ("area",)
 # ============================================================
 # DB
 # ============================================================
+
+HUB_BLD = {"silver.bld_basis_outline", "silver.bld_title", "silver.bld_recap_title", "silver.bld_atch_jibun", "silver.bld_expos",
+           "silver.bld_jijigu", "silver.bld_flr_outline", "silver.bld_expos_pubuse_area", "silver.bld_hsprc"}
+def hub_guard(t):
+    """2026-10-25 대장 9종은 허브 파일에서 만든 표(hub_swap.py)로 바꿔 끼웠다 — API 로 받은 줄을 거기 섞지 않는다."""
+    import os
+    if t in HUB_BLD and os.environ.get("ALLOW_API_BLD") != "1":
+        raise SystemExit(f"{t} 는 허브 대장 표입니다 — API 대장 적재는 멈췄습니다(hub_swap.py). 꼭 필요하면 ALLOW_API_BLD=1")
+
 def db_connect(cfg):
     d = cfg["db"]
     if _DRIVER == "pymssql":
@@ -893,6 +902,7 @@ def upsert_silver(cur, op, rows, run_id):
     row_hash 가 같으면 아무것도 하지 않는다 -> 이력 폭증 방지
     """
     target = op["target"]
+    hub_guard(target)
     keys = op["keys"]
     cols = list(dict.fromkeys(op["map"].values()))
     pnu_col = op.get("pnu_col")
