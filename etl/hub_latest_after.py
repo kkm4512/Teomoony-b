@@ -4,7 +4,8 @@ import os, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); Q = os.path.join(HERE, "_queue")
 while os.path.exists(os.path.join(Q, "hl-hub-reg-par.job")):
     time.sleep(120)
-for code in ("0308", "0306"):
+import sys as _s
+for code in (_s.argv[1:] or ["0308", "0306"]):
     print(f"$ hub_latest.py --code {code}", flush=True)
     r = subprocess.run([sys.executable, os.path.join(HERE, "hub_latest.py"), "--code", code], cwd=HERE)
     if r.returncode: sys.exit(r.returncode)

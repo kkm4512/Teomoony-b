@@ -27,7 +27,7 @@ LAYERS = [
        WHERE p.is_current = 1""",
    [("pnu", "text"), ("jibun", "text"), ("addr", "text"), ("jiga", D), ("geojson", "text"), ("complex_id", "int"), ("complex_nm", "text"),
     ("dong_cnt", "int"), ("has_recap", "boolean"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)],
-   ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
+   ["USING gist (box(point(minx, miny), point(maxx, maxy)))", "(pnu)"]),   # pnu: 10-25 지금 대장 없는 자리(닫힌 대장) 면을 필지에서 꺼낸다
   ("building",
    """SELECT CONCAT((SELECT CONCAT(COUNT_BIG(*), '/', MAX(valid_from), '/', MAX(valid_to)) FROM silver.building_footprint), '|',
                     (SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(CHECKSUM(pnu, complex_id))) FROM gold.complex_pnu), '|',

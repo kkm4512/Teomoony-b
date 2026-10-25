@@ -135,6 +135,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lawd", nargs="*", help="법정동코드 10자리. 생략하면 단지가 참조하는 전부")
     ap.add_argument("--no-geom", action="store_true", help="geometry 컬럼 생략 (GeoJSON 만 저장)")
+    ap.add_argument("--no-refresh", action="store_true",
+                    help="끝의 단지 좌표 재계산 · 전체 집계를 건너뛴다(2026-10-25 전국 적재 — 읍면동마다 3,500번 돌면 안 된다. 다 넣고 한 번)")
     ap.add_argument("--skip-loaded", action="store_true",
                     help="이미 필지가 들어온 법정동은 건너뛴다 (새 구를 빨리 채울 때)")
     args = ap.parse_args()
@@ -238,6 +240,8 @@ def main():
         total_new += n
         print(f"  -> {n} 적재")
 
+    if args.no_refresh:
+        print(f"\n새 필지 {total_new:,} — 단지 좌표 재계산은 건너뜀(--no-refresh)"); return
     print("\n단지 좌표 재계산")
     cur.execute("EXEC gold.usp_refresh_complex_geo")
     conn.commit()

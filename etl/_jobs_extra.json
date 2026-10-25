@@ -1249,5 +1249,173 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\zz_probe_hubcmp.sql"
+  ],
+  "ci-kaptcost-1y-par": [
+    "python",
+    "kapt_cost_go.py",
+    "--from",
+    "202510",
+    "--to",
+    "202604",
+    "--workers",
+    "4",
+    "--threads",
+    "8",
+    "--rps",
+    "8"
+  ],
+  "zq-rtms-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_rtms.sql"
+  ],
+  "zq-lawd-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_lawd.sql"
+  ],
+  "rn-rtms-nation-par": [
+    "python",
+    "rtms_nation.py",
+    "--workers",
+    "16"
+  ],
+  "zq-rtms2-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_rtms2.sql"
+  ],
+  "zk-kill-rtms": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'rtms_nation|load_rtms' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zq-deps-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_deps.sql"
+  ],
+  "zq-ddl-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_ddl.sql"
+  ],
+  "zq-hsprc-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hsprc.sql"
+  ],
+  "zq-dml-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_dml.sql"
+  ],
+  "hl-hub-latest2-par": [
+    "python",
+    "hub_latest_after.py",
+    "0304"
+  ],
+  "nk-kapt-nation-par": [
+    "python",
+    "nation_sgg.py",
+    "--tag",
+    "kapt",
+    "--workers",
+    "4",
+    "--",
+    "load_kapt.py",
+    "--sleep",
+    "0.3"
+  ],
+  "nk-kinder-nation-par": [
+    "python",
+    "nation_sgg.py",
+    "--tag",
+    "kinder",
+    "--workers",
+    "4",
+    "--",
+    "load_kinder.py"
+  ],
+  "na-academy-nation-par": [
+    "python",
+    "academy_all.py"
+  ],
+  "nc-cadastral-nation-par": [
+    "python",
+    "nation_lawd.py",
+    "--tag",
+    "cadastral",
+    "--workers",
+    "6",
+    "--",
+    "load_cadastral.py",
+    "--no-refresh"
+  ],
+  "zk-kill-cad": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'nation_lawd|load_cadastral' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zq-cl-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cl.sql"
+  ],
+  "zs-cl-q": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select count(*) 전체, count(*) filter (where now_complex_id is null) 지금없음, count(*) filter (where now_complex_id is not null) 지금있음 from svc.lyr_closed",
+    "select count(*) filter (where now_complex_id is null), count(*) from svc.lyr_closed where lng between 127.040 and 127.065 and lat between 37.605 and 37.620"
+  ],
+  "zs-parcel-pnu-ix": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "CREATE INDEX IF NOT EXISTS ix_lyr_parcel_pnu ON svc.lyr_parcel (pnu)",
+    "select count(*) from svc.lyr_parcel"
+  ],
+  "zq-jw-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_jw.sql"
+  ],
+  "hv-views-cmp-par": [
+    "python",
+    "hub_views_go.py"
+  ],
+  "zq-hubdiff-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hubdiff.sql"
+  ],
+  "zq-hubdiff2-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hubdiff2.sql"
+  ],
+  "zq-hubdiff3-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hubdiff3.sql"
+  ],
+  "zq-hubdiff4-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hubdiff4.sql"
+  ],
+  "zq-hubdiff5-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hubdiff5.sql"
+  ],
+  "zk-kill-hubdiff5": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'zz_probe_hubdiff5' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
   ]
 }
