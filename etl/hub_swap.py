@@ -80,6 +80,9 @@ def indexes(cur, t, t0):
           (SELECT STRING_AGG('[' + c.name + ']', ',') FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 1)
           FROM sys.indexes i WHERE i.object_id = OBJECT_ID('silver.{t}') AND i.type > 0 ORDER BY i.type, i.name""")
     for nm, td, pk, uq, flt, kc, inc in cur.fetchall():
+        cur.execute(f"SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID('silver.{t}__hub') AND name IN (%s, %s)", (nm, nm + "_h"))
+        if cur.fetchone()[0]:
+            log(f"   {nm} · 이미 있음"); continue
         t1 = time.time()
         if pk:
             sql = f"ALTER TABLE silver.{t}__hub ADD CONSTRAINT [{nm}_h] PRIMARY KEY {td} ({kc}) WITH (DATA_COMPRESSION = PAGE, MAXDOP = 4)"
@@ -130,6 +133,8 @@ if __name__ == "__main__":
         if subprocess.call([sys.executable, "ms_q.py", os.path.join("..", "deploy", "sql", "353_hub_views.sql")], cwd=h) != 0: sys.exit("뷰 적용 실패")
         for t in ([x for x in sys.argv[2:] if not x.startswith("--")] or TABLES): build(cur, t)
         check(cur)
+    elif op == "index":   # 2026-10-26 표는 다 넣었는데 색인 도중 끊겼을 때(디스크 압축으로 DB 를 내림) — 넣은 줄은 두고 없는 색인만
+        for t in [x for x in sys.argv[2:] if not x.startswith("--")]: indexes(cur, t, time.time())
     elif op == "check": check(cur)
     elif op == "swap": swap(cur)
     elif op == "back": swap(cur, back=True)

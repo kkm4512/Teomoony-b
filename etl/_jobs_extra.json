@@ -1641,5 +1641,101 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\356_tempdb_cap.sql"
+  ],
+  "zr-compact-ask": [
+    "cmd",
+    "/c",
+    "C:\\Project\\Teomoony\\etl\\compact_docker_disk.cmd"
+  ],
+  "zr-drives-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-PSDrive -PSProvider FileSystem | Select-Object Name,@{n='UsedGB';e={[math]::Round($_.Used/1GB)}},@{n='FreeGB';e={[math]::Round($_.Free/1GB)}} | Format-Table -AutoSize | Out-String; Get-CimInstance Win32_DiskDrive | Select-Object Model,@{n='GB';e={[math]::Round($_.Size/1GB)}} | Format-Table -AutoSize | Out-String; Get-Service com.docker.service -ErrorAction SilentlyContinue | Select-Object Name,Status,StartType"
+  ],
+  "zq-rest-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_rest.sql"
+  ],
+  "zs-cl-sido-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select left(l.sgg_cd,2) 시도, count(*) 단지, count(*) filter (where exists (select 1 from svc.complex_json j where j.complex_id = l.complex_id and j.kind = 'detail')) 담김 from svc.complex_list l where l.merged_into is null group by 1 order by 1"
+  ],
+  "zq-hs-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hs.sql"
+  ],
+  "zk-kill-compactask-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'compact_docker_disk' -and $_.ProcessId -ne $PID }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zr-hw": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,@{n='RAMGB';e={[math]::Round($_.TotalPhysicalMemory/1GB)}} | Format-List | Out-String; Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer,Product,Version | Format-List | Out-String; Get-CimInstance Win32_Processor | Select-Object Name | Format-List | Out-String; Get-PhysicalDisk | Select-Object FriendlyName,MediaType,BusType,@{n='GB';e={[math]::Round($_.Size/1GB)}} | Format-Table -AutoSize | Out-String; Get-CimInstance Win32_SystemEnclosure | Select-Object ChassisTypes | Format-List | Out-String"
+  ],
+  "hs-hub-index-hsprc-par": [
+    "python",
+    "hub_swap.py",
+    "index",
+    "bld_hsprc"
+  ],
+  "zq-cover": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_cover.sql"
+  ],
+  "zr-dl-ls": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-ChildItem \"$env:USERPROFILE\\Downloads\" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 6 Name,@{n='MB';e={[math]::Round($_.Length/1MB,1)}},LastWriteTime | Format-Table -AutoSize | Out-String -Width 200"
+  ],
+  "zd-semas-file": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$ProgressPreference = 'SilentlyContinue'; $o = 'C:\\Project\\Teomoony\\deploy\\bulk\\semas\\semas_20260630.zip'; $u = 'https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId=FILE_000000003695831&fileDetailSn=1&dataNm=' + [uri]::EscapeDataString('소상공인시장진흥공단_상가(상권)정보_20260630'); Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -Headers @{ Referer = 'https://www.data.go.kr/data/15083033/fileData.do' }; Get-Item $o | Select-Object Name,@{n='MB';e={[math]::Round($_.Length/1MB,1)}} | Format-List | Out-String; Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::OpenRead($o).Entries | Select-Object FullName,@{n='MB';e={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize | Out-String -Width 200"
+  ],
+  "ls-semas-file": [
+    "python",
+    "load_semas_file.py",
+    "..\\deploy\\bulk\\semas\\semas_20260630.zip",
+    "--base",
+    "20260630"
+  ],
+  "zq-ri-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_ri.sql"
+  ],
+  "zq-ri": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_ri.sql"
+  ],
+  "lr-ri-geom-par": [
+    "cmd",
+    "/c",
+    "python ms_q.py ..\\deploy\\sql\\357_ri_boundary.sql && python load_ri_geom.py --all"
+  ],
+  "zw-touch-web": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "(Get-Item C:\\Project\\Teomoony-f\\src\\server.js).LastWriteTime = Get-Date; Start-Sleep 8; Get-Content C:\\Project\\Teomoony\\logs\\web_life.log -Tail 2"
+  ],
+  "zk-kill-semasfile-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'load_semas_file' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
   ]
 }
