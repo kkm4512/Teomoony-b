@@ -1823,7 +1823,7 @@
     "python",
     "svc_sql.py",
     "..\\deploy\\svc\\pg\\_p_nop.sql",
-    "SELECT n.nspname||'.'||relname, c.relkind::text, pg_size_pretty(pg_total_relation_size(c.oid)), c.reltuples::bigint FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','i') AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12",
+    "SELECT n.nspname||'.'||relname, pg_size_pretty(pg_total_relation_size(c.oid)) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 8",
     "SELECT pg_size_pretty(pg_database_size('teomoony'))"
   ],
   "zs-361-par": [
@@ -2069,5 +2069,82 @@
   "zp-diff3-par": [
     "python",
     "_p_diff3.py"
+  ],
+  "zw-restart-web-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$w = Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match '--watch src/server.js' }; foreach ($p in $w) { $par = $p.ParentProcessId; $kids = Get-CimInstance Win32_Process -Filter \"ParentProcessId=$($p.ProcessId)\"; foreach ($k in $kids) { Stop-Process -Id $k.ProcessId -Force -ErrorAction SilentlyContinue }; Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; $pp = Get-CimInstance Win32_Process -Filter \"ProcessId=$par\"; if ($pp -and $pp.CommandLine -match 'npm-cli.js.*run dev') { Stop-Process -Id $par -Force -ErrorAction SilentlyContinue }; '옛 서버 끔 ' + $p.ProcessId }; Start-Sleep 2; Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','C:\\Project\\Teomoony-f\\restart_web.cmd','/force' -WorkingDirectory 'C:\\Project\\Teomoony-f'; Start-Sleep 25; Get-Content C:\\Project\\Teomoony\\logs\\web_life.log -Tail 2"
+  ],
+  "zp-node-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "netstat -ano | findstr ':5173' | findstr LISTENING; Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | ForEach-Object { $_.ProcessId.ToString() + ' ' + $_.ParentProcessId + ' ' + $_.CreationDate.ToString('MM-dd HH:mm:ss') + ' ' + $_.CommandLine.Substring(0,[math]::Min(90,$_.CommandLine.Length)) }"
+  ],
+  "zk-kill-pid-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "foreach ($i in 4740,23432) { try { Stop-Process -Id $i -Force -ErrorAction Stop; 'kill ' + $i } catch { 'skip ' + $i } }"
+  ],
+  "zp-ask-par": [
+    "python",
+    "_p_ask.py"
+  ],
+  "zs-365-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "python ms_q.py ..\\deploy\\sql\\365_log_shrink.sql; Start-Sleep 5; wsl -d docker-desktop -u root -e sh -c 'fstrim -av 2>&1'; 'C ' + [math]::Round((Get-PSDrive C).Free/1GB,1) + 'GB'"
+  ],
+  "zp-dongs-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 'http://localhost:5173/api/areas/dongs?sgg=27710&kind=lawd'; ($r.Content | ConvertFrom-Json).동 | ForEach-Object { $_.cd + ' ' + $_.이름 + ' ' + $_.단지수 + ' ' + $_.경계있음 }"
+  ],
+  "zr-lawd-page": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$ProgressPreference='SilentlyContinue'; $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 'https://www.data.go.kr/data/15063424/fileData.do'; $c = $r.Content; [regex]::Matches($c, 'atchFileId[^&\"]{0,5}[=:][^&\"]{0,3}(FILE_\\d+)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique; [regex]::Matches($c, '(수정일|등록일|최종 수정일)[^<]{0,40}</[a-z]+>\\s*<[^>]+>\\s*([0-9\\-\\.]{8,10})') | ForEach-Object { $_.Groups[1].Value + ' ' + $_.Groups[2].Value }; [regex]::Matches($c, '국토교통부_전국 법정동_\\d{8}[^<\"]{0,10}') | ForEach-Object { $_.Value } | Select-Object -Unique"
+  ],
+  "zr-stanregin-par": [
+    "python",
+    "_p_stanregin.py",
+    "대구광역시 달성군"
+  ],
+  "zl-lawd-api-par": [
+    "python",
+    "load_lawd_api.py",
+    "--apply"
+  ],
+  "zc-cad-guji-par": [
+    "python",
+    "load_cadastral.py",
+    "--lawd",
+    "2771026800",
+    "2771026821",
+    "2771026822",
+    "2771026823",
+    "2771026824",
+    "2771026825",
+    "2771026826",
+    "2771026827",
+    "2771026828",
+    "2771026829",
+    "2771026830",
+    "2771026831",
+    "2771026832",
+    "2771026833",
+    "2771026834",
+    "2771026835"
+  ],
+  "zw-guji-chain-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "while (Test-Path '_queue\\zc-cad-guji-par.job') { Start-Sleep 20 }; python svc_markers_only.py --now; python load_rtms.py --rematch-only; 'rematch ' + $LASTEXITCODE; python svc_markers_only.py --now; '끝 ' + (Get-Date -Format 'HH:mm')"
   ]
 }

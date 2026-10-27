@@ -6,7 +6,7 @@
   ★ 10-27: warn 아래로 가면 먼저 fstrim(30분에 한 번) — 그래도 stop 아래면 멈춘다."""
 import argparse, shutil, subprocess, time
 ap = argparse.ArgumentParser(); ap.add_argument("--stop", type=float, default=25); ap.add_argument("--warn", type=float, default=50); a = ap.parse_args()
-HEAVY = "hub_swap|load_cadastral|nation_lawd|rtms_nation|load_rtms|gold_nation"  # gold_nation 은 시군구마다 끝난 기록이 있어 멈춰도 이어 돈다
+HEAVY = "hub_swap|load_cadastral|nation_lawd|rtms_nation|load_rtms|gold_nation|svc_publish.py --mode full|nm_build"  # gold_nation 은 시군구마다 끝난 기록이 있어 멈춰도 이어 돈다
 last = None
 깎은때 = 0
 def 깎기():
@@ -20,7 +20,7 @@ while True:
     lv = "stop" if free < a.stop else "warn" if free < a.warn else "ok"
     if lv != last or lv != "ok" and int(time.time()) % 600 < 60:
         print(f"[{time.strftime('%m-%d %H:%M')}] C 남은 {free:.1f}GB · {lv}", flush=True)
-    if lv != "ok" and time.time() - 깎은때 > 1800:   # 멈추기 전에 먼저 돌려받기(30분에 한 번)
+    if lv != "ok" and time.time() - 깎은때 > 600:   # 멈추기 전에 먼저 돌려받기(10분에 한 번 — 10-28 새벽 9분에 8.7GB 가 줄었다)
         깎은때 = time.time()
         try: 깎기()
         except Exception as e: print(f"   fstrim 실패: {e}", flush=True)
