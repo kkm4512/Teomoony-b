@@ -7,12 +7,20 @@
 import os, time, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 Q = os.path.join(HERE, "_queue")
-print("svc_cron 시작 — 매시 05분 발행", flush=True)
+print("svc_cron 시작 — 매시 05분 발행 · 35분 매칭 테이블(nm) 다시 만들기", flush=True)
+# ★ 2026-10-27: 매칭 테이블(nm_build.py, 약 9분)도 매시 35분에 — 적재가 새로 들어오면 늦어도 한 시간 안에 '자료 받았나' 가 따라간다
 while True:
     n = datetime.datetime.now()
-    nxt = (n.replace(minute=5, second=0, microsecond=0) + (datetime.timedelta(hours=1) if n.minute >= 5 else datetime.timedelta()))
+    후보 = [n.replace(minute=m, second=0, microsecond=0) for m in (5, 35)]
+    후보 = [x if x > n else x + datetime.timedelta(hours=1) for x in 후보]
+    nxt = min(후보)
     time.sleep(max(5, (nxt - n).total_seconds()))
     jobs = set(os.listdir(Q))
+    if nxt.minute == 35:
+        if "nm-build-par.job" in jobs:
+            print(f"[{datetime.datetime.now():%m-%d %H:%M}] 지난 nm 이 아직 — 건너뜀", flush=True); continue
+        open(os.path.join(Q, "nm-build-par.job"), "w").close()
+        print(f"[{datetime.datetime.now():%m-%d %H:%M}] nm-build-par.job 놓음", flush=True); continue
     if any(j.startswith("sp-hourly") and j.endswith(".job") for j in jobs):
         print(f"[{datetime.datetime.now():%m-%d %H:%M}] 지난 발행이 아직 — 건너뜀", flush=True); continue
     name = "sp-hourly0-par.job" if any(j.startswith("sp-full") and j.endswith(".job") for j in jobs) else "sp-hourly-par.job"

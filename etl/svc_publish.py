@@ -124,7 +124,8 @@ WITH s AS (
    WHERE r.match_complex_id IS NOT NULL AND r.is_rent = 0 AND r.is_canceled = 0 AND r.deal_amount IS NOT NULL)
 SELECT c.complex_id, c.complex_nm, c.rep_plat_plc, CAST(c.has_recap AS INT), c.dong_cnt, c.hhld_cnt_sum,
        CAST(c.centroid_lat AS FLOAT), CAST(c.centroid_lng AS FLOAT), c.trade_cnt, c.rent_cnt,
-       s.area_grp, CAST(s.deal_amount AS VARCHAR(30)), s.deal_ymd, s.dealing_gbn, al.실거래이름
+       s.area_grp, CAST(s.deal_amount AS VARCHAR(30)), s.deal_ymd, s.dealing_gbn, al.실거래이름,
+       lawd_cd = LEFT(c.rep_pnu, 10)   -- 10-27 동네 고르기의 단지 수(대표 지번의 법정동 · 동네 목록이 쓰는 것과 같은 기준)
   FROM gold.v_complex_map c
   LEFT JOIN s ON s.cid = c.complex_id AND s.rn = 1
   LEFT JOIN gold.complex_alias al ON al.complex_id = c.complex_id
@@ -140,7 +141,7 @@ def publish_markers(ms, pg):
         c.execute("""CREATE TABLE svc.complex_marker_new (
             complex_id int PRIMARY KEY, complex_nm text, rep_plat_plc text, has_recap boolean, dong_cnt int, hhld_cnt_sum int,
             centroid_lat double precision, centroid_lng double precision, trade_cnt int, rent_cnt int,
-            area_grp int, max_amount text, max_ymd text, max_dealing text, 실거래이름 text)""")
+            area_grp int, max_amount text, max_ymd text, max_dealing text, 실거래이름 text, lawd_cd text)""")
         with c.copy("COPY svc.complex_marker_new FROM STDIN") as cp:
             for r in rows:
                 r = list(r); r[3] = bool(r[3]) if r[3] is not None else None
@@ -148,6 +149,27 @@ def publish_markers(ms, pg):
         c.execute("CREATE INDEX ix_marker_new_lnglat ON svc.complex_marker_new (centroid_lng, centroid_lat)")
         c.execute("CREATE INDEX ix_marker_new_ord ON svc.complex_marker_new (dong_cnt DESC, hhld_cnt_sum DESC)")
         c.execute("ANALYZE svc.complex_marker_new")
+        # ★ 2026-10-27 사장님 "법정동 · 행정동 고를 때 단지 개수도" — **지도에 찍히는 이 마커 표 그대로** 센다(목록 · 지도와 같은 수).
+        #   시도 · 시군구 · 읍면동(앞 8자리 — 리 단지도 그 읍·면에 든다) · 리 = 대표 지번의 법정동코드 앞자리.
+        #   행정동 = 마커 점이 행정동 경계(SGIS) 안에 드는 것. 이름으로 잇지 않는다. 같이 바꿔 끼운다.
+        c.execute("DROP TABLE IF EXISTS svc.area_cnt_new")
+        c.execute("CREATE TABLE svc.area_cnt_new (kind text, cd text, n int, PRIMARY KEY (kind, cd))")
+        c.execute(r"""INSERT INTO svc.area_cnt_new
+            SELECT k, cd, count(*) FROM (
+              SELECT 'sido' k, left(lawd_cd, 2) cd FROM svc.complex_marker_new WHERE lawd_cd ~ '^\d{10}$'
+              UNION ALL SELECT 'sgg', left(lawd_cd, 5) FROM svc.complex_marker_new WHERE lawd_cd ~ '^\d{10}$'
+              UNION ALL SELECT 'emd', left(lawd_cd, 8) || '00' FROM svc.complex_marker_new WHERE lawd_cd ~ '^\d{10}$'
+              UNION ALL SELECT 'ri', lawd_cd FROM svc.complex_marker_new WHERE lawd_cd ~ '^\d{10}$' AND right(lawd_cd, 2) <> '00') z
+            GROUP BY k, cd""")
+        c.execute("SELECT to_regclass('svc.lyr_adm') IS NOT NULL"); 
+        if c.fetchone()[0]:
+            c.execute("""CREATE TEMP TABLE _adm ON COMMIT DROP AS
+                         SELECT adm_cd_sgis cd, ST_SetSRID(ST_GeomFromGeoJSON(geojson), 4326) g FROM svc.lyr_adm WHERE geojson IS NOT NULL""")
+            c.execute("CREATE INDEX ON _adm USING gist (g)")
+            c.execute("""INSERT INTO svc.area_cnt_new
+                         SELECT 'adm', a.cd, count(*) FROM _adm a
+                           JOIN svc.complex_marker_new m ON ST_Intersects(a.g, ST_SetSRID(ST_MakePoint(m.centroid_lng, m.centroid_lat), 4326))
+                          GROUP BY a.cd ON CONFLICT DO NOTHING""")
     pg.commit()
     import psycopg.errors   # 바꿔 끼우기는 짧게 + 잠금 3초 제한(svc_layers 와 같은 이유)
     for 번 in range(20):
@@ -158,6 +180,9 @@ def publish_markers(ms, pg):
                 c.execute("ALTER TABLE svc.complex_marker_new RENAME TO complex_marker")
                 c.execute("ALTER INDEX svc.ix_marker_new_lnglat RENAME TO ix_marker_lnglat")
                 c.execute("ALTER INDEX svc.ix_marker_new_ord RENAME TO ix_marker_ord")
+                c.execute("DROP TABLE IF EXISTS svc.area_cnt")
+                c.execute("ALTER TABLE svc.area_cnt_new RENAME TO area_cnt")
+                c.execute("ALTER INDEX svc.area_cnt_new_pkey RENAME TO area_cnt_pkey")
             pg.commit(); break
         except psycopg.errors.LockNotAvailable:
             pg.rollback(); time.sleep(5)
@@ -211,8 +236,9 @@ def main():
         info = {r[0]: (r[1], r[2]) for r in c.fetchall()}
         c.execute("SELECT complex_id, kind FROM svc.complex_json"); have = {(r[0], r[1]) for r in c.fetchall()}
     pg.commit()   # 같은 이유(아래 적재DB 질의 · 받기 동안 열어 두지 않게)
-    def 순위(cid):   # 수도권(서울 · 인천 · 경기) 큰 단지부터
-        h, s = info.get(cid, (0, None)); return (0 if (s or '')[:2] in ('11', '28', '41') else 1, -(h or 0), cid)
+    def 순위(cid):   # 세대 많은 단지부터(전국) — 같은 세대 수면 수도권(서울 · 인천 · 경기) 먼저
+        # ★ 10-27 전국 단지 657만: 예전 순서(수도권 전부 → 그 밖)면 수도권 단독 수백만 채가 부산 · 대구 큰 아파트보다 앞섰다
+        h, s = info.get(cid, (0, None)); return (-(h or 0), 0 if (s or '')[:2] in ('11', '28', '41') else 1, cid)
     want = []
     if a.mode == "ids":
         ids = a.ids or []

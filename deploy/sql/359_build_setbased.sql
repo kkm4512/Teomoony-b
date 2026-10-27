@@ -1,0 +1,227 @@
+/* 359 usp_build_complexes — 단지 발급을 **한 건씩(커서) 대신 한 번에(집합)** (2026-10-27)
+   커서가 대장 뿌리(root)마다 usp_resolve_complex 를 불러 중구 하나에 6분 · 전국(뿌리 수백만)이면 며칠이었다.
+   같은 규칙을 집합으로: ① 이미 식별자가 있으면(is_primary=1) 이름만 같은 규칙으로 고친다(조각 식별자 is_primary=0 은 건드리지 않음)
+   ② 없으면 단지를 새로 만들고 식별자(ROOT_PK)를 붙인다 — 한 트랜잭션. 이름 고르는 규칙(총괄 > 집합 > 일반 · 세대 · 연면적)은 그대로.
+   ── 아래는 358 설명 ──
+   358 usp_build_complexes — 시군구로 부르면 **그 시군구가 건드린 단지만** 필지 매핑 · 요약값을 다시 센다 (2026-10-27)
+   전국 시군구 268곳을 하나씩 돌리는데(gold_nation), 필지 매핑 MERGE 와 요약값 UPDATE 가 **전국 단지 전부**를 매번 다시 셌다
+   → 종로구 하나에 50분이 넘었다(268번 × 전국). 결과는 같다: 다른 시군구 단지는 이번에 바뀐 게 없으니 다시 셀 것이 없다.
+   ★ '건드린 단지' = 이 시군구 단지 + 이 시군구에 동(대장)이 하나라도 있는 단지(시군구 경계를 걸친 단지도 빠지지 않게).
+   ★ 시군구 없이 부르면(@sigungu_cd NULL) 예전처럼 전부. 354(root UPDATE 뺌)는 그대로 들어 있다. */
+CREATE OR ALTER PROCEDURE gold.usp_build_complexes
+    @sigungu_cd CHAR(5) = NULL,
+    @bjdong_cd  CHAR(5) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    /* ---- root_bldrgst_pk: 2026-10-25 허브 대장으로 바꿔 끼운 뒤로는 표를 만들 때 이미 채워져 있다(hub_views.py · 같은 식).
+       예전처럼 여기서 UPDATE 하면 허브에서 만든 표를 고치게 되고, 전국이면 수천만 줄을 다시 쓴다 → 뺐다. ---- */
+
+    /* ---- 단지 발급 ---- */
+
+    IF OBJECT_ID('tempdb..#r') IS NOT NULL DROP TABLE #r;
+    SELECT iv = b.root_bldrgst_pk,
+               /* ★ 단지명: 총괄표제부 > 집합건축물 표제부 > 일반건축물
+                  예전에는 총괄표제부('1')만 봤다. 총괄표제부는 전체의 1,947건뿐이라
+                  단지의 99%가 이름을 못 받고 주소 문자열로 떨어졌다.
+                  연립다세대는 한 동짜리 집합건축물('3')이라 이름이 거기 있다
+                  (regstr_kind_cd=3 의 54%가 bld_nm 보유).
+                  전유부('4')는 쓰지 않는다 — root_bldrgst_pk 가 표제부를 가리켜
+                  다단계 단지에서 단지의 root 와 어긋난다. */
+               /* ★★ 2026-10-16 수정 — 여기에 MAX(bld_nm) 을 쓰고 있었다.
+                  **문자열 MAX 는 사전순 마지막**을 집는다. 접두가 같으면 긴 쪽이 이긴다:
+
+                    "돈암동 삼성아파트"      <  "돈암동 삼성아파트 유치원동"
+                    "창신쌍용아파트 2지구"   <  "창신쌍용아파트 2지구 상가"
+
+                  그래서 736세대 단지가 '유치원동', 1,006세대 단지가 '상가' 로 떴다.
+                  숫자는 맞고 이름만 틀려서 **집계로는 안 드러나고 화면에서만 보였다.**
+
+                  정책 7장이 이미 적어둔 규칙이다 — "컬럼별 MAX 는 서로 다른 행의 값을
+                  한 줄에 섞는다. TOP 1 ... ORDER BY 로 한 건을 통째로 집는다"(CONTEXT 4-16).
+                  인허가에서 배운 교훈인데 단지명에는 적용돼 있지 않았다.
+
+                  -> 대장 종류 우선순위(총괄 > 집합 > 일반)는 그대로 두고, 같은 종류
+                     안에서는 **세대수가 가장 많은 표제부**를 집는다. 세대가 모두 0이면
+                     연면적으로 가른다. 부속동(유치원·상가·경비실)은 세대와 면적이
+                     작으므로 **키워드 목록 없이 자동으로 밀린다** — 이름을 열거해
+                     거르면 새로운 부속동 이름이 나올 때마다 또 틀린다. */
+               nm = nm.bld_nm,
+               nmsrc = nm.nm_src,
+               sgg = MAX(b.sigungu_cd), bjd = MAX(b.bjdong_cd),
+               grp = CASE WHEN MAX(CASE WHEN b.regstr_kind_cd='1' THEN 1 ELSE 0 END) = 1
+                    THEN 'RECAP' ELSE 'STANDALONE' END
+        INTO #r
+        FROM silver.bld_basis_outline b
+        /* 단지의 이름 후보를 한 건으로 집는다. 세대수는 표제부에 있으므로 조인한다. */
+        OUTER APPLY (
+            SELECT TOP 1
+                   bld_nm = NULLIF(LTRIM(RTRIM(b2.bld_nm)),''),
+                   nm_src = CASE b2.regstr_kind_cd WHEN '1' THEN 'RECAP'
+                                                   WHEN '3' THEN 'TITLE'
+                                                   ELSE 'GENERAL' END
+            FROM silver.bld_basis_outline b2
+            LEFT JOIN silver.bld_title t2
+                   ON t2.mgm_bldrgst_pk = b2.mgm_bldrgst_pk AND t2.is_current = 1
+            WHERE b2.is_current = 1
+              AND b2.regstr_kind_cd IN ('1','2','3')
+              AND b2.root_bldrgst_pk = b.root_bldrgst_pk
+              AND NULLIF(LTRIM(RTRIM(b2.bld_nm)),'') IS NOT NULL
+            ORDER BY CASE b2.regstr_kind_cd WHEN '1' THEN 1 WHEN '3' THEN 2 ELSE 3 END,
+                     ISNULL(t2.hhld_cnt, 0) DESC,      -- 세대가 많은 동이 단지를 대표한다
+                     ISNULL(t2.tot_area, 0) DESC,      -- 세대가 모두 0이면 연면적으로
+                     b2.mgm_bldrgst_pk                 -- 그래도 같으면 고정 순서로 (재현성)
+        ) nm
+        WHERE b.is_current = 1
+          AND b.regstr_kind_cd IN ('1','2','3')      -- 전유부 제외
+          AND b.root_bldrgst_pk IS NOT NULL
+          AND (@sigungu_cd IS NULL OR b.sigungu_cd = @sigungu_cd)
+          AND (@bjdong_cd  IS NULL OR b.bjdong_cd  = @bjdong_cd)
+        GROUP BY b.root_bldrgst_pk, nm.bld_nm, nm.nm_src;
+
+
+    CREATE UNIQUE CLUSTERED INDEX x ON #r (iv);
+
+    /* ① 이미 있는 단지: usp_resolve_complex 와 같은 이름 규칙 */
+    UPDATE c
+       SET complex_nm = CASE WHEN r.nm IS NOT NULL THEN r.nm
+                             WHEN c.complex_nm_src = 'ADDR' THEN NULL
+                             ELSE c.complex_nm END,
+           complex_nm_src = CASE WHEN r.nm IS NOT NULL THEN r.nmsrc
+                                 WHEN c.complex_nm_src = 'ADDR' THEN NULL
+                                 ELSE c.complex_nm_src END,
+           updated_at = SYSDATETIME()
+      FROM gold.complex c
+      JOIN gold.complex_identity ci ON ci.complex_id = c.complex_id AND ci.identity_type = 'ROOT_PK' AND ci.is_primary = 1
+      JOIN #r r ON r.iv = ci.identity_val;
+
+    /* ② 새 단지 + 식별자 */
+    IF OBJECT_ID('tempdb..#new') IS NOT NULL DROP TABLE #new;
+    CREATE TABLE #new (complex_id INT NOT NULL, iv VARCHAR(100) NOT NULL);
+    BEGIN TRAN;
+        INSERT INTO gold.complex (root_bldrgst_pk, complex_nm, complex_nm_src, sigungu_cd, bjdong_cd, grouping_rule)
+        OUTPUT inserted.complex_id, inserted.root_bldrgst_pk INTO #new (complex_id, iv)
+        SELECT r.iv, r.nm, r.nmsrc, r.sgg, r.bjd, r.grp
+          FROM #r r
+         WHERE NOT EXISTS (SELECT 1 FROM gold.complex_identity ci WHERE ci.identity_type = 'ROOT_PK' AND ci.identity_val = r.iv);
+        INSERT INTO gold.complex_identity (complex_id, identity_type, identity_val, is_primary)
+        SELECT complex_id, 'ROOT_PK', iv, 1 FROM #new;
+    COMMIT;
+
+
+    /* ---- 단지 <-> 대장 매핑 ---- */
+    MERGE gold.complex_bld AS tgt
+    USING (
+        SELECT ci.complex_id, b.mgm_bldrgst_pk, b.regstr_kind_cd,
+               CASE WHEN b.regstr_kind_cd = '1' THEN 1 ELSE 0 END AS is_recap,
+               CASE WHEN b.mgm_bldrgst_pk = b.root_bldrgst_pk
+                    THEN 'ROOT' ELSE 'CHILD' END AS link_rule
+        FROM silver.bld_basis_outline b
+        JOIN gold.complex_identity ci
+          ON ci.identity_type = 'ROOT_PK' AND ci.identity_val = b.root_bldrgst_pk
+        WHERE b.is_current = 1 AND b.regstr_kind_cd IN ('1','2','3')
+          AND (@sigungu_cd IS NULL OR b.sigungu_cd = @sigungu_cd)
+          AND (@bjdong_cd  IS NULL OR b.bjdong_cd  = @bjdong_cd)
+    ) AS src
+       ON tgt.mgm_bldrgst_pk = src.mgm_bldrgst_pk
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (complex_id, mgm_bldrgst_pk, regstr_kind_cd, is_recap, link_rule)
+        VALUES (src.complex_id, src.mgm_bldrgst_pk, src.regstr_kind_cd, src.is_recap, src.link_rule);
+
+    /* ---- 이번에 건드린 단지 ---- */
+    IF OBJECT_ID('tempdb..#cs') IS NOT NULL DROP TABLE #cs;
+    CREATE TABLE #cs (complex_id INT NOT NULL PRIMARY KEY);
+    IF @sigungu_cd IS NULL
+        INSERT #cs SELECT complex_id FROM gold.complex;
+    ELSE
+        INSERT #cs
+        SELECT complex_id FROM gold.complex WHERE sigungu_cd = @sigungu_cd AND (@bjdong_cd IS NULL OR bjdong_cd = @bjdong_cd)
+        UNION
+        SELECT cb.complex_id FROM gold.complex_bld cb
+          JOIN silver.bld_basis_outline b ON b.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND b.is_current = 1
+         WHERE b.sigungu_cd = @sigungu_cd AND (@bjdong_cd IS NULL OR b.bjdong_cd = @bjdong_cd);
+
+    /* ---- 단지 <-> 필지 (기본개요 대지 + 부속지번 합집합) ---- */
+    MERGE gold.complex_pnu AS tgt
+    USING (
+        /* (complex_id, pnu) 로 묶는다. 한 PNU 가 대지이면서 동시에
+           다른 동의 부속지번일 수 있어, 묶지 않으면 PK 가 터진다.
+           MAX('MAIN','ATTACHED') = 'MAIN' -> 대지 역할 우선. */
+        SELECT cb.complex_id, x.pnu, MAX(x.pnu_role) AS pnu_role
+        FROM gold.complex_bld cb
+        JOIN #cs ON #cs.complex_id = cb.complex_id
+        CROSS APPLY (
+            SELECT b.pnu, 'MAIN' AS pnu_role
+            FROM silver.bld_basis_outline b
+            WHERE b.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND b.is_current = 1 AND b.pnu IS NOT NULL
+            UNION ALL
+            SELECT a.atch_pnu, 'ATTACHED'
+            FROM silver.bld_atch_jibun a
+            WHERE a.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND a.is_current = 1 AND a.atch_pnu IS NOT NULL
+        ) x
+        GROUP BY cb.complex_id, x.pnu
+    ) AS src
+       ON tgt.complex_id = src.complex_id AND tgt.pnu = src.pnu
+    WHEN NOT MATCHED BY TARGET THEN
+        INSERT (complex_id, pnu, pnu_role) VALUES (src.complex_id, src.pnu, src.pnu_role);
+
+    /* ---- 요약값 재계산 ---- */
+    WITH agg AS (
+        SELECT cb.complex_id,
+               SUM(CASE WHEN cb.regstr_kind_cd IN ('2','3') THEN 1 ELSE 0 END) AS dong_cnt,
+               MAX(CASE WHEN cb.is_recap = 1 THEN 1 ELSE 0 END)                AS has_recap
+        FROM gold.complex_bld cb JOIN #cs ON #cs.complex_id = cb.complex_id GROUP BY cb.complex_id
+    ), tagg AS (
+        SELECT cb.complex_id,
+               SUM(t.hhld_cnt) AS hhld_sum, SUM(t.tot_area) AS area_sum,
+               MIN(NULLIF(t.use_apr_day,'')) AS min_apr, MAX(NULLIF(t.use_apr_day,'')) AS max_apr
+        FROM gold.complex_bld cb
+        JOIN #cs ON #cs.complex_id = cb.complex_id
+        JOIN silver.bld_title t ON t.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND t.is_current = 1
+        GROUP BY cb.complex_id
+    ), pnuagg AS (
+        SELECT cp.complex_id, COUNT(*) AS pnu_cnt FROM gold.complex_pnu cp JOIN #cs ON #cs.complex_id = cp.complex_id GROUP BY cp.complex_id
+    ), rep AS (
+        /* 대표 = 총괄표제부 우선, 없으면 연면적 최대 */
+        SELECT cb.complex_id, b.pnu, b.plat_plc, b.new_plat_plc,
+               ROW_NUMBER() OVER (PARTITION BY cb.complex_id
+                   ORDER BY cb.is_recap DESC, ISNULL(t.tot_area,0) DESC, b.mgm_bldrgst_pk) AS rn
+        FROM gold.complex_bld cb
+        JOIN #cs ON #cs.complex_id = cb.complex_id
+        JOIN silver.bld_basis_outline b ON b.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND b.is_current = 1
+        LEFT JOIN silver.bld_title t    ON t.mgm_bldrgst_pk = cb.mgm_bldrgst_pk AND t.is_current = 1
+    )
+    UPDATE c
+       SET c.dong_cnt       = a.dong_cnt,
+           c.has_recap      = a.has_recap,
+           c.pnu_cnt        = p.pnu_cnt,
+           c.hhld_cnt_sum   = tg.hhld_sum,
+           c.tot_area_sum   = tg.area_sum,
+           c.oldest_use_apr = tg.min_apr,
+           c.latest_use_apr = tg.max_apr,
+           c.rep_pnu        = r.pnu,
+           c.rep_plat_plc   = r.plat_plc,
+           c.rep_road_addr  = r.new_plat_plc,
+           c.updated_at     = SYSDATETIME()
+      FROM gold.complex c
+      JOIN agg a         ON a.complex_id  = c.complex_id
+      LEFT JOIN tagg tg  ON tg.complex_id = c.complex_id
+      LEFT JOIN pnuagg p ON p.complex_id  = c.complex_id
+      LEFT JOIN rep r    ON r.complex_id  = c.complex_id AND r.rn = 1;
+
+    UPDATE cp SET is_representative = 1
+      FROM gold.complex_pnu cp
+      JOIN #cs ON #cs.complex_id = cp.complex_id
+      JOIN gold.complex c ON c.complex_id = cp.complex_id AND c.rep_pnu = cp.pnu;
+
+    /* 단지명이 비면 대표 주소로 대체. 출처를 'ADDR' 로 남겨, 나중에 진짜 이름이
+       생기면 usp_resolve_complex 가 덮을 수 있게 한다. */
+    UPDATE c
+       SET complex_nm = c.rep_plat_plc, complex_nm_src = 'ADDR'
+      FROM gold.complex c JOIN #cs ON #cs.complex_id = c.complex_id
+     WHERE c.complex_nm IS NULL AND c.rep_plat_plc IS NOT NULL;
+END
+
+GO

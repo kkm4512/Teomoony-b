@@ -96,6 +96,7 @@ def indexes(cur, t, t0):
     log(f"{t}: 끝 · {time.time()-t0:.0f}초")
 
 def check(cur):
+    bad = []
     for t in TABLES:
         cur.execute(f"""SELECT (SELECT COUNT_BIG(*) FROM silver.{t} WHERE is_current = 1),
                                (SELECT COUNT_BIG(*) FROM silver.{t}__hub) ,
@@ -103,6 +104,8 @@ def check(cur):
                                (SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID('silver.{t}__hub') AND type > 0)""")
         a, b, i1, i2 = cur.fetchone()
         log(f"{t}: 지금(API) {a:,} · 허브 {b:,} · 색인 {i1}/{i2}{'' if i1 == i2 else '  ✘ 색인 모자람'}")
+        if i1 != i2 or b < a: bad.append(t)   # 허브가 API 보다 줄이 적으면(허브는 전국이라 더 많아야 한다) 바꿔 끼우지 않는다
+    if bad: sys.exit("✘ 바꿔 끼우기 전에 볼 것: " + ", ".join(bad))
 
 def swap(cur, back=False):
     cur.execute("SET LOCK_TIMEOUT 10000")

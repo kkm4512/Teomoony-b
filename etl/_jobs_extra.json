@@ -1610,9 +1610,9 @@
     "python",
     "disk_guard.py",
     "--stop",
-    "25",
+    "10",
     "--warn",
-    "50"
+    "30"
   ],
   "zr-isadmin": [
     "powershell",
@@ -1737,5 +1737,280 @@
     "-NoProfile",
     "-Command",
     "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'load_semas_file' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zq-hsdup-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_probe_hsdup.sql"
+  ],
+  "hg-hub-go-par": [
+    "python",
+    "hub_go.py"
+  ],
+  "zs-drop-semasfile-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\zz_drop_semasfile.sql"
+  ],
+  "zk-kill-goldnation-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'gold_nation|hub_go' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "gn-gold-nation-par": [
+    "cmd",
+    "/c",
+    "python ms_q.py ..\\deploy\\sql\\358_build_by_sgg.sql && python gold_nation.py"
+  ],
+  "zk-pause-heavy-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'rtms_nation|load_rtms|svc_publish.py --mode full' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zd-def2": [
+    "python",
+    "dump_def.py",
+    "gold.usp_resolve_complex"
+  ],
+  "zs-359-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\359_build_setbased.sql"
+  ],
+  "zs-360-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\360_drop_hub_latest.sql"
+  ],
+  "zk-kill-diskguard-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'disk_guard' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zp-ps-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | ForEach-Object { $_.ProcessId.ToString() + ' ' + $_.CreationDate.ToString('MM-dd HH:mm') + ' ' + $_.CommandLine.Substring(0,[math]::Min(110,$_.CommandLine.Length)) }"
+  ],
+  "zp-blk-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_blk.sql"
+  ],
+  "zp-pgact-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\_p_nop.sql",
+    "SELECT pid, state, wait_event_type, wait_event, (now()-query_start)::text, (now()-xact_start)::text, left(regexp_replace(query,'\\s+',' ','g'),150) FROM pg_stat_activity WHERE datname='teomoony' AND pid<>pg_backend_pid() ORDER BY xact_start NULLS LAST",
+    "SELECT l.pid, l.relation::regclass::text, l.mode, l.granted FROM pg_locks l WHERE NOT l.granted"
+  ],
+  "zp-cnt-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_cnt.sql"
+  ],
+  "zp-web-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$u='http://localhost:5173/api/health?full=1'; $t=Measure-Command { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 90 $u }; 'ms ' + [int]$t.TotalMilliseconds; $r.Content.Substring(0,[math]::Min(400,$r.Content.Length)); $r2=Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 'http://localhost:5173/api/health'; $r2.Content.Substring(0,[math]::Min(300,$r2.Content.Length))"
+  ],
+  "zp-pgsize-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\_p_nop.sql",
+    "SELECT n.nspname||'.'||relname, c.relkind::text, pg_size_pretty(pg_total_relation_size(c.oid)), c.reltuples::bigint FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','i') AND n.nspname NOT IN ('pg_catalog','information_schema') ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12",
+    "SELECT pg_size_pretty(pg_database_size('teomoony'))"
+  ],
+  "zs-361-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\361_geo_new_only.sql"
+  ],
+  "zt-fstrim-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$a=(Get-PSDrive C).Free/1GB; 'C 전 ' + [math]::Round($a,1) + 'GB'; wsl -d docker-desktop -u root -e sh -c 'fstrim -av 2>&1' 2>&1; Start-Sleep 20; $b=(Get-PSDrive C).Free/1GB; 'C 뒤 ' + [math]::Round($b,1) + 'GB'"
+  ],
+  "zw-after-hourly-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "while (Test-Path '_queue\\sp-hourly0-par.job') { Start-Sleep 20 }; Start-Sleep 5; if (-not (Test-Path '_queue\\sp-hourly-par.job')) { New-Item -ItemType File '_queue\\sp-hourly-par.job' | Out-Null; 'sp-hourly-par 놓음 ' + (Get-Date -Format 'HH:mm:ss') }"
+  ],
+  "zl-geo-loop-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "while (Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'gold_nation' }) { Start-Sleep 5400; (Get-Date -Format 'MM-dd HH:mm') + ' 361'; python ms_q.py ..\\deploy\\sql\\361_geo_new_only.sql 2>&1 | Select-Object -Last 3 }; 'gold_nation 끝 — 고리 멈춤'"
+  ],
+  "zp-who-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_who.sql"
+  ],
+  "zp-pgadm-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\_p_nop.sql",
+    "SELECT count(*), left(min(geojson),80) FROM svc.lyr_adm",
+    "SELECT count(*) FROM svc.lyr_adm WHERE geojson IS NULL",
+    "SELECT postgis_version()",
+    "SELECT left(adm_cd_sgis,2), count(*) FROM svc.lyr_adm GROUP BY 1 ORDER BY 1"
+  ],
+  "zs-markers-par": [
+    "python",
+    "svc_markers_only.py",
+    "--now"
+  ],
+  "zs-usagefix-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_usage_fix.sql"
+  ],
+  "zk-kill-markers-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'svc_markers_only' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zp-web2-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 'http://localhost:5173/api/areas/sgg?sido=11'; $j=$r.Content | ConvertFrom-Json; $j.구 | Select-Object -First 5 | ForEach-Object { $_.sgg_cd + ' ' + $_.단지수 }; $r2=Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 'http://localhost:5173/api/areas/dongs?sgg=11170&kind=lawd'; ($r2.Content | ConvertFrom-Json).동 | Select-Object -First 4 | ForEach-Object { $_.cd + ' ' + $_.단지수 }; $r3=Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 'http://localhost:5173/app.js'; 'app.js 단지수말: ' + $r3.Content.Contains('단지수말') + ' cache: ' + $r3.Headers['Cache-Control']"
+  ],
+  "zp-time-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/areas/sido' } catch { } }; '/api/areas/sido ' + [int]$t.TotalMilliseconds + 'ms'; $t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/coverage' } catch { } }; '/api/coverage ' + [int]$t.TotalMilliseconds + 'ms'; $t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/areas/sgg?sido=11' } catch { } }; '/api/areas/sgg?sido=11 ' + [int]$t.TotalMilliseconds + 'ms'; $t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/areas/here?lat=37.55&lng=126.97' } catch { } }; '/api/areas/here?lat=37.55&lng=126.97 ' + [int]$t.TotalMilliseconds + 'ms'; $t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/config' } catch { } }; '/api/config ' + [int]$t.TotalMilliseconds + 'ms'; $t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/health' } catch { } }; '/api/health ' + [int]$t.TotalMilliseconds + 'ms'; $t=Measure-Command { try { $r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 'http://localhost:5173/api/health?full=1' } catch { } }; '/api/health?full=1 ' + [int]$t.TotalMilliseconds + 'ms'"
+  ],
+  "zw-touch-web2": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Add-Content -Path C:\\Project\\Teomoony-f\\src\\server.js -Value '' -Encoding UTF8; Start-Sleep 12; Get-Content C:\\Project\\Teomoony\\logs\\web_life.log -Tail 2"
+  ],
+  "zp-pgjs-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\_p_nop.sql",
+    "SELECT j.kind, CASE WHEN coalesce(l.hhld,0) >= 20 THEN 'big' ELSE 'small' END g, count(*), round(avg(length(j.body_gz))) FROM svc.complex_json j LEFT JOIN svc.complex_list l ON l.complex_id = j.complex_id GROUP BY 1,2 ORDER BY 2,1"
+  ],
+  "zp-jsonkeys-par": [
+    "python",
+    "_p_jsonkeys.py"
+  ],
+  "zp-def-par": [
+    "python",
+    "dump_def.py",
+    "gold.v_complex_poi",
+    "gold.v_complex_school"
+  ],
+  "zt-norm-setup-par": [
+    "python",
+    "norm_test.py",
+    "setup"
+  ],
+  "zt-norm-bench-par": [
+    "python",
+    "norm_test.py",
+    "bench"
+  ],
+  "zp-tsize-par": [
+    "python",
+    "_p_tsize.py"
+  ],
+  "zp-cols-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_cols.sql"
+  ],
+  "zt-norm2-setup-par": [
+    "python",
+    "norm_test2.py",
+    "setup"
+  ],
+  "zt-norm2-bench-par": [
+    "python",
+    "norm_test2.py",
+    "bench"
+  ],
+  "zt-subdiv-par": [
+    "python",
+    "_p_subdiv.py"
+  ],
+  "zt-norm-build-par": [
+    "python",
+    "norm_build.py"
+  ],
+  "zd-devweb-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Set-Location C:\\Project\\Teomoony-f; $env:TEOMOONY_DEV='1'; $env:PORT='5174'; node src/server.js --dev5174"
+  ],
+  "zk-kill-devweb-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match '--dev5174' }; $p | ForEach-Object { 'kill ' + $_.ProcessId }; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zt-norm-e2e-par": [
+    "python",
+    "norm_e2e.py",
+    "200"
+  ],
+  "zp-geod-par": [
+    "python",
+    "_p_geod.py"
+  ],
+  "zp-diff-par": [
+    "python",
+    "_p_diff.py"
+  ],
+  "zp-diff2-par": [
+    "python",
+    "_p_diff2.py"
+  ],
+  "zp-timing-par": [
+    "python",
+    "_p_timing.py"
+  ],
+  "zt-norm-scope-par": [
+    "python",
+    "norm_scope.py"
+  ],
+  "nm-build-par": [
+    "python",
+    "nm_build.py"
+  ],
+  "zt-nm-e2e-par": [
+    "python",
+    "norm_e2e.py",
+    "200",
+    "5174"
+  ],
+  "zk-kill-cron-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'svc_cron' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zp-ord-par": [
+    "python",
+    "_p_ord.py"
+  ],
+  "zt-nm-e2e-prod-par": [
+    "python",
+    "norm_e2e.py",
+    "100",
+    "5173"
   ]
 }

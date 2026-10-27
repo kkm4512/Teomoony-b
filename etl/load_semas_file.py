@@ -61,7 +61,7 @@ SELECT bizes_id = CAST({T('상가업소번호')} AS VARCHAR(30)), bizes_nm = CAS
   INTO #n FROM hub.semas_file;
 SELECT 줄 = COUNT(*), 겹침 = SUM(CASE WHEN rn > 1 THEN 1 ELSE 0 END), 번호없음 = SUM(CASE WHEN bizes_id IS NULL THEN 1 ELSE 0 END),
        PNU있음 = SUM(CASE WHEN pnu IS NOT NULL THEN 1 ELSE 0 END), 좌표있음 = SUM(CASE WHEN lon IS NOT NULL AND lat IS NOT NULL THEN 1 ELSE 0 END),
-       이미있음 = SUM(CASE WHEN rn = 1 AND EXISTS (SELECT 1 FROM silver.semas_store s WHERE s.is_current = 1 AND s.bizes_id = #n.bizes_id) THEN 1 ELSE 0 END)
+       이미있음 = (SELECT COUNT(*) FROM #n n2 WHERE n2.rn = 1 AND EXISTS (SELECT 1 FROM silver.semas_store s WHERE s.is_current = 1 AND s.bizes_id = n2.bizes_id))
   FROM #n;""")
 r = cur.fetchone(); log("파일 줄 {:,} · 같은 번호 겹침 {:,} · 번호 없음 {:,} · PNU {:,} · 좌표 {:,} · 이미 있음(건드리지 않음) {:,}".format(*r))
 cols = ["bizes_id", "bizes_nm", "brch_nm", "inds_lcls_cd", "inds_lcls_nm", "inds_mcls_cd", "inds_mcls_nm", "inds_scls_cd", "inds_scls_nm", "ksic_cd", "ksic_nm",
