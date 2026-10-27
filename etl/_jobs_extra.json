@@ -1910,8 +1910,10 @@
   "zp-def-par": [
     "python",
     "dump_def.py",
-    "gold.v_complex_poi",
-    "gold.v_complex_school"
+    "gold.v_complex_academy",
+    "gold.v_complex_kinder",
+    "gold.v_complex_subway",
+    "gold.v_complex_bus"
   ],
   "zt-norm-setup-par": [
     "python",
@@ -2012,5 +2014,60 @@
     "norm_e2e.py",
     "100",
     "5173"
+  ],
+  "zs-droptest-par": [
+    "python",
+    "_p_droptest.py"
+  ],
+  "zk-kill-spfull-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'svc_publish.py --mode full' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "rm-rematch-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "python load_rtms.py --rematch-only; 'rematch 종료코드 ' + $LASTEXITCODE; python svc_markers_only.py; if (-not (Test-Path '_queue\\sp-full-rest-par.job')) { New-Item -ItemType File '_queue\\sp-full-rest-par.job' | Out-Null; 'sp-full-rest 다시 놓음 ' + (Get-Date -Format 'HH:mm') }"
+  ],
+  "zs-362-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\362_bus_view_tiebreak.sql"
+  ],
+  "zw-nm2-chain-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "python ms_q.py ..\\deploy\\sql\\362_bus_view_tiebreak.sql; python nm_build.py; 'nm 종료코드 ' + $LASTEXITCODE"
+  ],
+  "zk-kill-nm-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'nm_build' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zk-kill-e2e-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'norm_e2e' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "rm-rematch2-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "while (Test-Path '_queue\\rm-rematch-par.job') { Start-Sleep 30 }; (Get-Date -Format 'HH:mm') + ' 1차 끝 — 발행 잠시 멈춤'; Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'svc_publish.py --mode full' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; python ms_q.py ..\\deploy\\sql\\363_rtms_reset_wrong_ri.sql; python proc_patch.py gold.usp_match_complex_trade 'TOP (20000)' 'TOP (4000)'; python load_rtms.py --rematch-only; 'rematch2 종료코드 ' + $LASTEXITCODE; python svc_markers_only.py --now; if (-not (Test-Path '_queue\\sp-full-rest-par.job')) { New-Item -ItemType File '_queue\\sp-full-rest-par.job' | Out-Null }; 'sp-full-rest 다시 ' + (Get-Date -Format 'HH:mm')"
+  ],
+  "zk-kill-chain2-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -match '363_rtms_reset' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zp-diff3-par": [
+    "python",
+    "_p_diff3.py"
   ]
 }

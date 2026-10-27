@@ -13,7 +13,7 @@ ms.execute(f"""SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
   SELECT TOP {N//2} complex_id FROM gold.complex WHERE merged_into IS NULL AND is_active = 1 AND centroid_lat IS NOT NULL AND ISNULL(hhld_cnt_sum,0) < 20 AND sigungu_cd NOT LIKE '11%' ORDER BY NEWID();""")
 ids = [r[0] for r in ms.fetchall()]; ms.nextset(); ids += [r[0] for r in ms.fetchall()]
 random.seed(3); random.shuffle(ids)
-KEYS = ["poi", "poiSum", "poiBrand", "poiLife", "schoolZone", "schoolGroups", "schools", "schoolList", "scope"]
+KEYS = ["poi", "poiSum", "poiBrand", "poiLife", "schoolZone", "schoolGroups", "schools", "schoolList", "scope", "kinders", "academy", "subways", "busStops", "busList", "busRoutes", "kinderLoaded", "schoolZoneLoaded", "공시적재"]
 def 열기(port, cid):
     a = time.perf_counter()
     u = f"http://127.0.0.1:{SELF}/api/complexes/{cid}?_t=1" + ("&_nm=0" if port == 5173 else "") if SELF else f"http://127.0.0.1:{port}/api/complexes/{cid}?_t=1"

@@ -2,6 +2,7 @@
 """nm_build - 서비스DB(PostgreSQL teomoony) 의 매칭 테이블 스키마 nm 을 새로 만들고 바꿔 끼운다 (2026-10-27 사장님 "중복 데이터는 매칭 테이블 — 원본을 훼손하지 않으면 채용")
   ★ 원천 표 = 적재DB 원본 행 그대로(고치지 않는다): store(silver.semas_store + 뷰 gold.v_complex_poi 의 life · brand 규칙을 지금 정의에서 그대로 떼어 옴)
      · school · school_link · schoolinfo · schoolinfo_stat · school_zone · school_group · school_zone_link
+     · academy · kinder · subway · bus_stop · bus_route_station · bus_route · coverage · load_gap(10-27 2차)
   ★ 매칭 표 = 연결만(지금 적재DB 규칙 그대로): cpt(단지 가운데 점) · complex_pnu · complex_lawd · complex_zone(단지 → 통학구역 · 학교군, ST_Contains)
      · lawd_scope(법정동마다 '그 자료를 받았나' — 지금 상세의 EXISTS 와 같은 뜻)
   ★ nm_new 에 다 만든 뒤 한 번에 이름을 바꾼다(읽는 쪽은 옛 nm 아니면 새 nm 만 본다). 실패하면 옛 nm 이 그대로 남는다.
@@ -11,6 +12,9 @@ from svc_publish import env, ms_conn
 ap = argparse.ArgumentParser(); ap.add_argument("--db", default="teomoony"); ap.add_argument("--schema", default="nm"); a = ap.parse_args()
 E = env(); S = a.schema; N = S + "_new"
 t = psycopg.connect(host="127.0.0.1", port=15432, dbname=a.db, user="teomoony", password=E["SVC_DB_PASSWORD"], autocommit=True)
+# ★ 둘이 동시에 돌면(매시 35분 + 손으로 건 것) 서로의 nm_new 를 지운다 → 한 번에 하나만(세션 잠금 — 끝나거나 죽으면 풀린다)
+if not t.execute("SELECT pg_try_advisory_lock(80271027)").fetchone()[0]:
+    print("다른 nm_build 가 도는 중 — 건너뜀", flush=True); raise SystemExit(0)
 ms = ms_conn(E).cursor()
 T0 = time.time()
 def 읽기(sql):
@@ -106,6 +110,44 @@ with t.cursor() as c, c.copy(f"COPY {N}.lawd_scope FROM STDIN") as cp:
         cp.write_row([L] + [1 if L in 있음[k] else 0 for k in ("필지", "건물", "인허가", "kapt")] + [1 if L[:5] in 관리비구 else 0]
                      + [1 if L in 있음[k] else 0 for k in ("주택가격", "전유부", "층별")])
 찍기("lawd_scope", len(lawds), a0)
+# 7 주변 원천 표(학원 · 유치원 · 지하철 · 버스) — 원본 행 그대로(쓰는 칸만) + 점. 거리는 열 때 공간 색인으로(지금 뷰와 같은 반경)
+def 원천(tb, sql, cols, geo=True):
+    a0 = time.time()
+    t.execute(f"CREATE TABLE {N}.{tb} ({cols})"); 읽기(sql)
+    n = 붓기(tb, ", ".join(c.split()[0] for c in cols.split(", ")))
+    if geo:
+        t.execute(f"ALTER TABLE {N}.{tb} ADD COLUMN g geography(Point,4326)")
+        t.execute(f"UPDATE {N}.{tb} SET g = ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography WHERE lat IS NOT NULL AND lon IS NOT NULL")
+        t.execute(f"CREATE INDEX ON {N}.{tb} USING gist (g)")
+    찍기(tb, n, a0)
+cur = ms_conn(E).cursor(); cur.execute("SELECT OBJECT_DEFINITION(OBJECT_ID('gold.v_complex_academy'))"); d = cur.fetchone()[0]
+grp = re.search(r"grp\s*=\s*CASE a\.realm_sc_nm.*?\n\s*END,", d, re.S).group(0).rstrip(',')
+원천("academy", f"""SELECT a.academy_sk, a.aca_nm, a.realm_sc_nm, a.le_crse_nm, {grp}, CAST(a.geog.Lat AS FLOAT), CAST(a.geog.Long AS FLOAT)
+                    FROM silver.academy a WHERE a.is_current = 1 AND a.geog IS NOT NULL AND a.reg_sttus_nm = N'개원'""",
+     "academy_sk bigint, aca_nm text, realm_sc_nm text, le_crse_nm text, grp text, lat float8, lon float8")
+t.execute(f"CREATE TABLE {N}.academy_total (\"전체\" int, \"좌표있음\" int)")
+읽기("SELECT COUNT(*), SUM(CASE WHEN geog IS NOT NULL THEN 1 ELSE 0 END) FROM silver.academy WHERE is_current = 1 AND reg_sttus_nm = N'개원'")
+붓기("academy_total", '"전체", "좌표있음"')
+원천("kinder", """SELECT kinder_cd, kinder_nm, establish, cap_cnt, pupil_cnt, class_cnt, pbnt_tmng, oper_time, CAST(geog.Lat AS FLOAT), CAST(geog.Long AS FLOAT)
+                   FROM silver.kindergarten WHERE geog IS NOT NULL""",
+     "kinder_cd text, kinder_nm text, establish text, cap_cnt int, pupil_cnt int, class_cnt int, pbnt_tmng text, oper_time text, lat float8, lon float8")
+원천("subway", """SELECT sttn_nm, line_nm, transfer_se, CAST(geog.Lat AS FLOAT), CAST(geog.Long AS FLOAT)
+                   FROM silver.subway_station WHERE is_current = 1 AND geog IS NOT NULL""",
+     "sttn_nm text, line_nm text, transfer_se text, lat float8, lon float8")
+원천("bus_stop", """SELECT stop_no, stop_nm, ars_no, city_code, CAST(geog.Lat AS FLOAT), CAST(geog.Long AS FLOAT)
+                     FROM silver.bus_stop WHERE is_current = 1 AND geog IS NOT NULL""",
+     "stop_no text, stop_nm text, ars_no text, city_code text, lat float8, lon float8")
+원천("bus_route_station", """SELECT route_id, ars_no, CAST(lat AS FLOAT), CAST(lon AS FLOAT) FROM silver.bus_route_station WHERE lat IS NOT NULL AND lon IS NOT NULL""",
+     "route_id text, ars_no text, lat float8, lon float8")
+t.execute(f"CREATE INDEX ON {N}.bus_route_station (ars_no)")
+원천("bus_route", "SELECT route_id, route_abrv, route_type FROM silver.bus_route", "route_id text, route_abrv text, route_type text", geo=False)
+t.execute(f"CREATE INDEX ON {N}.bus_route (route_id)")
+# 8 '받았나' 표 — meta.coverage(자료 × 시군구) · 공시가격 쪽 빈 곳(meta.v_load_page_gap, getBrHsprcInfo)
+원천("coverage", "SELECT 자료, sgg_cd FROM meta.coverage", "\"자료\" text, sgg_cd text", geo=False)
+t.execute(f"CREATE INDEX ON {N}.coverage (\"자료\", sgg_cd)")
+원천("load_gap", "SELECT sgg_cd, bjdong_cd, 받은건수, api_total, 받은페이지, 빠진페이지, 실패 FROM meta.v_load_page_gap WHERE op = 'getBrHsprcInfo'",
+     "sgg_cd text, bjdong_cd text, \"받은건수\" int, api_total int, \"받은페이지\" int, \"빠진페이지\" int, \"실패\" int", geo=False)
+t.execute(f"CREATE INDEX ON {N}.school_zone ((sd_cd || sgg_cd))")
 t.execute(f"ANALYZE")  # 통계
 # 6 바꿔 끼우기 — 짧게, 잠금 3초 제한(svc_layers 와 같은 이유)
 for 번 in range(20):

@@ -153,6 +153,12 @@ def pick(r, *names):
     return None
 
 
+def 리있는읍면들(cur):
+    """리를 둔 읍·면(법정동코드 앞 8자리). 이 읍·면 이름만 오고 리가 없는 거래는 지번이 어느 리 것인지 알 수 없다."""
+    cur.execute("SELECT DISTINCT LEFT(lawd_cd, 8) FROM meta.lawd_code WHERE ri_nm IS NOT NULL")
+    return {r[0] for r in cur.fetchall()}
+
+
 def rematch(cur, conn, name2code_all):
     """이미 적재된 행의 매칭을 다시 계산한다.
 
@@ -169,9 +175,12 @@ def rematch(cur, conn, name2code_all):
     rows = cur.fetchall()
     if not rows:
         return 0, 0
+    리있는읍면 = 리있는읍면들(cur)
     fixed = still = 0
     for sk, sgg, umd, jib in rows:
         lawd = name2code_all.get((sgg, umd))
+        if lawd and lawd[:8] in 리있는읍면 and lawd.endswith("00"):
+            lawd = None   # ★ 10-27 리 없이 온 읍·면 — 어느 리인지 모른다(고르면 틀린다)
         m = JIBUN_RE.match(jib or "")
         if lawd and m:
             pnu = (f"{lawd}{'2' if m.group(1) else '1'}"
@@ -275,7 +284,11 @@ def main():
     if n:
         print(f"meta.lawd_code 를 적재 데이터로 {n}건 생성 (적재 범위만 커버)\n")
     # 재매칭용 - 시군구 구분까지 포함한 전체 매핑
-    cur.execute("SELECT sgg_cd, emd_nm, lawd_cd FROM meta.lawd_code WHERE emd_nm IS NOT NULL")
+    # ★ 2026-10-27: 이름 → 법정동코드. 예전엔 emd_nm 만 키로 써서 **리 행이 읍·면 이름을 덮어썼다** —
+    #   '음봉면'(리 없이 온 거래)이 그 면의 아무 리 코드에 붙었고(1,416건), '화도읍 창현리' 처럼 리까지 온 거래는 못 찾았다(NO_LAWD 249만).
+    #   이제 키 = '읍면동' 또는 '읍면동 리'(원문 umdNm 모양 그대로). 폐지된 코드는 지금 코드가 덮어쓴다.
+    cur.execute("""SELECT sgg_cd, CASE WHEN ri_nm IS NULL THEN emd_nm ELSE emd_nm + N' ' + ri_nm END, lawd_cd
+                     FROM meta.lawd_code WHERE emd_nm IS NOT NULL ORDER BY is_abolished DESC, lawd_cd""")
     name2code_all = {(r[0], r[1]): r[2] for r in cur.fetchall()}
 
     # 시군구와 무관하게 DB 전체를 다시 맞춘다. 다운로드 없음.
@@ -285,8 +298,10 @@ def main():
         conn.close()
         return
 
-    cur.execute("SELECT emd_nm, lawd_cd FROM meta.lawd_code WHERE sgg_cd=%s", (args.sgg,))
-    name2code = {r[0]: r[1] for r in cur.fetchall()}
+    cur.execute("""SELECT CASE WHEN ri_nm IS NULL THEN emd_nm ELSE emd_nm + N' ' + ri_nm END, lawd_cd
+                     FROM meta.lawd_code WHERE sgg_cd=%s AND emd_nm IS NOT NULL ORDER BY is_abolished DESC, lawd_cd""", (args.sgg,))
+    name2code = {r[0]: r[1] for r in cur.fetchall()}   # 위 name2code_all 과 같은 키(10-27)
+    리있는읍면 = 리있는읍면들(cur)
 
     kinds = args.kind or sorted(KINDS_DEFAULT)   # 분양권은 --kind 로 따로
     ms = months(args.ym_from, args.ym_to)
@@ -325,6 +340,8 @@ def main():
                     method = "MASKED"; note = f"지번 마스킹: {jib}"
                 else:
                     lawd = name2code.get(umd)
+                    if lawd and lawd[:8] in 리있는읍면 and lawd.endswith("00"):
+                        lawd = None   # 10-27 리 없이 온 읍·면 — 어느 리인지 모른다
                     if not lawd:
                         method = "NO_LAWD"; note = f"법정동 '{umd}' 코드 없음"
                         if umd: unknown[umd] = unknown.get(umd, 0) + 1
