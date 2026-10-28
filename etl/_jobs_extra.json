@@ -2398,5 +2398,19 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\987_sessions.sql"
+  ],
+  "zp-rh-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_rh.sql"
+  ],
+  "cl-merge-frag-par": [
+    "python",
+    "merge_frag_cron.py"
+  ],
+  "zq-375-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\375_schedule_merge_frag.sql"
   ]
 }

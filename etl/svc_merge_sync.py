@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """svc_merge_sync - 적재DB 에서 단지를 묶은 뒤(287/331/374) 서비스DB 를 맞춘다 (2026-10-28)
-  py svc_merge_sync.py 373      근거가 '373' 으로 시작하는 묶음만
+  py svc_merge_sync.py 373 [이후시각]      근거가 '373' 으로 시작하는 묶음만(시각을 주면 그 뒤에 묶은 것만)
   ① 흡수된 조각의 미리 만든 응답(svc.complex_json · svc.resp_cache) 지움 — 파생 캐시다. 그 주소는 적재DB 경로(301 → 남는 단지)가 답한다.
   ② 남는 단지를 '상세 다시' 표(svc.detail_dirty)에 적음 — 동 수 · 세대 · 실거래가 바뀌었다."""
 import sys
 from svc_publish import env, ms_conn, pg_conn
 key = sys.argv[1] if len(sys.argv) > 1 else "373"
+since = sys.argv[2] if len(sys.argv) > 2 else "1900-01-01"   # 10-28: merge_frag_cron 이 '이번에 묶은 것만' 넘긴다(적재DB 시각 = UTC)
 e = env(); cur = ms_conn(e).cursor()
-cur.execute("SELECT old_id, new_id FROM ops.complex_merged WHERE 근거 LIKE %s", (key + "%",))
+cur.execute("SELECT old_id, new_id FROM ops.complex_merged WHERE 근거 LIKE %s AND at >= %s", (key + "%", since))
 rows = cur.fetchall(); olds = [r[0] for r in rows]; news = sorted({r[1] for r in rows})
 pg = pg_conn(e)
 with pg.cursor() as c:
