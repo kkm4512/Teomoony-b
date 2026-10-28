@@ -2281,5 +2281,20 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\371_schedule_detail_dirty.sql"
+  ],
+  "zp-tabs-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_tabs.sql"
+  ],
+  "zp-match-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_match.sql"
+  ],
+  "zp-hsprc-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_hsprc.sql"
   ]
 }
