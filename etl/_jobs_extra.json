@@ -2412,5 +2412,29 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\375_schedule_merge_frag.sql"
+  ],
+  "zp-hub-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_hub.sql"
+  ],
+  "zp-rebuild-test-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_rebuild_test.sql"
+  ],
+  "zp-hubm-test-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_hubm_test.sql"
+  ],
+  "cl-hub-month-par": [
+    "python",
+    "hub_month.py"
+  ],
+  "zq-376-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\376_schedule_hub_month_on.sql"
   ]
 }

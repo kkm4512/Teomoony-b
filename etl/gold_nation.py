@@ -10,10 +10,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DONE = os.path.join(HERE, "_nation_gold_done.txt")
 def log(*a): print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
 ap = argparse.ArgumentParser(); ap.add_argument("--sido", default=""); ap.add_argument("--retry", type=int, default=4)
-ap.add_argument("--no-final", action="store_true"); a = ap.parse_args()
+ap.add_argument("--no-final", action="store_true")
+ap.add_argument("--sgg-file", default="", help="10-28 hub_month: 이 시군구만(줄마다 하나)")
+ap.add_argument("--done-file", default="", help="10-28 hub_month: 이어받기 기록 파일(달마다 따로)"); a = ap.parse_args()
+if a.done_file: DONE = a.done_file
 ms = ms_conn(env()); cur = ms.cursor()
 cur.execute("SELECT DISTINCT sigungu_cd FROM silver.bld_basis_outline WHERE is_current = 1 AND sigungu_cd LIKE %s ORDER BY 1", (a.sido + "%",))
 sggs = [r[0] for r in cur.fetchall() if r[0]]
+if a.sgg_file:
+    want = set(open(a.sgg_file, encoding="utf-8").read().split()); sggs = [s for s in sggs if s in want]
 done = set(open(DONE, encoding="utf-8").read().split()) if os.path.exists(DONE) else set()
 todo = [s for s in sggs if s not in done]
 log(f"시군구 {len(sggs)} · 끝낸 것 {len(sggs)-len(todo)} · 남은 것 {len(todo)}")
