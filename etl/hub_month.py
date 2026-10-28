@@ -4,7 +4,7 @@
   py hub_month.py                 (수집 일정 '건축물대장 월 갱신' · 매월 22일 02:00) · 새 달이 없으면 종료코드 3
   py hub_month.py --month 202610  (그 달만 · 이어하기)
   ① 새 달 확인 — 허브 목록에 우리가 넣은 달(hub.month_done)보다 뒤 달이 7종 다 있나
-  ② 받기 — 대장 뼈대 7종(기본개요 · 총괄표제부 · 표제부 · 층별개요 · 부속지번 · 전유부 · 지역지구구역) · hub_bulk.py
+  ② 받기 — 대장 뼈대 7종(기본개요 · 총괄표제부 · 표제부 · 층별개요 · 부속지번 · 전유부 · 지역지구구역) + 건축인허가 기본개요 · 동별개요(10-28) · hub_bulk.py
   ③ 버전 표에 얹기 — load_hub.py(같은 줄은 그대로 · 바뀐 줄은 새 줄 · 사라진 줄은 닫음 = 원본 그대로의 월별 버전) · 층별개요는 hub_latest(구획 줄 그대로)도
   ④ 바뀐 대장 PK = 이번 달에 새로 생긴 줄 + 이번 달에 사라진 줄(hub.month_chg 에 남김)
   ⑤ 우리 대장 표(silver.bld_*) — 그 PK 만: 지금 줄을 닫고(is_current = 0 · valid_to) 허브 뷰(hubv)의 지금 줄을 넣는다. **지우지 않는다**(이력이 남는다)
@@ -18,7 +18,12 @@ HERE = os.path.dirname(os.path.abspath(__file__)); py = sys.executable
 STATE = os.path.join(HERE, "_hub_month_state.json")
 ROOT = os.path.join(HERE, "..", "deploy", "bulk", "hub")
 CODES = {"0301": "bld_basis_outline", "0302": "bld_recap_title", "0303": "bld_title", "0304": "bld_flr_outline",
-         "0305": "bld_atch_jibun", "0309": "bld_expos", "0310": "bld_jijigu"}
+         "0305": "bld_atch_jibun", "0309": "bld_expos", "0310": "bld_jijigu",
+         # ★ 10-28: 건축인허가 기본개요 · 동별개요도(379 · pms_swap 으로 전국 허브판이 됨) — 열쇠 칸이 대장과 다르다
+         "0101": "arch_permit", "0102": "arch_permit_dong"}
+HUBKEY = {"0101": "관리_허가대장_PK", "0102": "관리_동별_개요_PK"}          # 그 밖은 관리_건축물대장_PK
+SKEY = {"0101": "mgm_pmsrgst_pk", "0102": "mgm_dong_ouln_pk"}              # 그 밖은 mgm_bldrgst_pk
+CAT = lambda c: SPEC[c]["분류"]
 def log(*a): print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
 def run(*a):
     log("$", " ".join(a)); r = subprocess.run([py, *a], cwd=HERE)
@@ -35,12 +40,12 @@ cur.execute("SELECT MAX(월) FROM hub.month_done WHERE code = '0303'"); last = c
 if a.month: M = a.month
 else:
     # ① 허브 목록(hub_bulk --list 는 _export/hub_items.json 을 새로 쓴다)
-    run("hub_bulk.py", "--list", "--cat", "건축물대장")
+    run("hub_bulk.py", "--list", "--cat", "건축물대장", "건축인허가")
     items = json.load(open(os.path.join(HERE, "_export", "hub_items.json"), encoding="utf-8"))
-    names = {SPEC[c]["이름"] for c in CODES}
+    names = {(CAT(c), SPEC[c]["이름"]) for c in CODES}
     by = {}
     for i in items:
-        if i["cat"] == "건축물대장" and i["월"] and i["이름"] in names: by.setdefault(i["월"], set()).add(i["이름"])
+        if i["월"] and (i["cat"], i["이름"]) in names: by.setdefault(i["월"], set()).add((i["cat"], i["이름"]))
     new = sorted(m for m, s in by.items() if m > (last or "") and s >= names)
     log(f"우리 마지막 달 {last} · 허브 목록의 달 {sorted(by)} · 새 달 {new}")
     if not new: log("출처에 새 것 없음"); sys.exit(3)
@@ -52,7 +57,8 @@ free = shutil.disk_usage(HERE).free / 2**30
 if free < 40 and step in ("", "받기"): log(f"C 남은 {free:.0f}GB < 40GB — 건너뜀"); sys.exit(3)
 
 if step == "":
-    run("hub_bulk.py", "--cat", "건축물대장", "--only", *[SPEC[c]["이름"] for c in CODES], "--month", f"{M[:4]}-{M[4:]}", "--workers", "3")
+    for cat in sorted({CAT(c) for c in CODES}):
+        run("hub_bulk.py", "--cat", cat, "--only", *sorted({SPEC[c]["이름"] for c in CODES if CAT(c) == cat}), "--month", f"{M[:4]}-{M[4:]}", "--workers", "3")
     st_put(M, "받기"); step = "받기"
 if step == "받기":
     for c in CODES: run("load_hub.py", "--code", c, "--month", M)
@@ -64,9 +70,10 @@ if step == "얹기":
                    CREATE TABLE hub.month_chg (월 CHAR(6) NOT NULL, code CHAR(4) NOT NULL, pk NVARCHAR(33) NOT NULL, CONSTRAINT pk_hub_month_chg PRIMARY KEY (월, code, pk))""")
     cur.execute("DELETE FROM hub.month_chg WHERE 월 = %s", (M,))
     for c in CODES:
+        hk = HUBKEY.get(c, "관리_건축물대장_PK")
         cur.execute(f"""INSERT hub.month_chg (월, code, pk)
-                        SELECT DISTINCT %s, %s, [관리_건축물대장_PK] FROM hub.t{c}
-                         WHERE [관리_건축물대장_PK] IS NOT NULL AND (처음월 = %s OR 마지막월 = %s)""", (M, c, M, prev or "000000"))
+                        SELECT DISTINCT %s, %s, [{hk}] FROM hub.t{c}
+                         WHERE [{hk}] IS NOT NULL AND (처음월 = %s OR 마지막월 = %s)""", (M, c, M, prev or "000000"))
         log(f"  {c} {SPEC[c]['이름']}: 바뀐 대장 {cur.rowcount:,}")
     st_put(M, "바뀐것"); step = "바뀐것"
 if step == "바뀐것":
@@ -76,11 +83,11 @@ if step == "바뀐것":
         cl = ", ".join(f"[{r[0]}]" for r in cur.fetchall())
         cur.execute(f"""SET XACT_ABORT ON; BEGIN TRAN;
             UPDATE s SET is_current = 0, valid_to = SYSDATETIME()
-              FROM silver.{t} s JOIN hub.month_chg g ON g.월 = %s AND g.code = %s AND g.pk = s.mgm_bldrgst_pk
+              FROM silver.{t} s JOIN hub.month_chg g ON g.월 = %s AND g.code = %s AND g.pk = s.{SKEY.get(c, "mgm_bldrgst_pk")}
              WHERE s.is_current = 1;
             DECLARE @닫음 INT = @@ROWCOUNT;
             INSERT INTO silver.{t} ({cl})
-            SELECT {cl} FROM hubv.{t} v WHERE v.mgm_bldrgst_pk IN (SELECT pk FROM hub.month_chg WHERE 월 = %s AND code = %s) OPTION (MAXDOP 4);
+            SELECT {cl} FROM hubv.{t} v WHERE v.{SKEY.get(c, "mgm_bldrgst_pk")} IN (SELECT pk FROM hub.month_chg WHERE 월 = %s AND code = %s) OPTION (MAXDOP 4);
             DECLARE @넣음 INT = @@ROWCOUNT;
             COMMIT; SELECT @닫음, @넣음;""", (M, c, M, c))
         n1, n2 = cur.fetchone()
@@ -89,7 +96,7 @@ if step == "바뀐것":
     st_put(M, "대장"); step = "대장"
 if step == "대장":
     cur.execute("""SELECT DISTINCT b.sigungu_cd FROM silver.bld_basis_outline b
-                    WHERE b.mgm_bldrgst_pk IN (SELECT pk FROM hub.month_chg WHERE 월 = %s) AND b.sigungu_cd IS NOT NULL ORDER BY 1""", (M,))
+                    WHERE b.mgm_bldrgst_pk IN (SELECT pk FROM hub.month_chg WHERE 월 = %s AND code LIKE '03%%') AND b.sigungu_cd IS NOT NULL ORDER BY 1""", (M,))
     sggs = [r[0] for r in cur.fetchall()]
     sf = os.path.join(HERE, "_hub_month_sgg.txt"); open(sf, "w").write("\n".join(sggs) + "\n")
     log(f"바뀐 시군구 {len(sggs)}")
@@ -99,8 +106,10 @@ if step == "단지":
     run("load_rtms.py", "--rematch-only")
     st_put(M, "실거래"); step = "실거래"
 if step == "실거래":
-    cur.execute("""SELECT DISTINCT cb.complex_id FROM gold.complex_bld cb
-                    WHERE cb.mgm_bldrgst_pk IN (SELECT pk FROM hub.month_chg WHERE 월 = %s)""", (M,))
+    cur.execute("""SELECT cb.complex_id FROM gold.complex_bld cb
+                    WHERE cb.mgm_bldrgst_pk IN (SELECT pk FROM hub.month_chg WHERE 월 = %s AND code LIKE '03%%')
+                   UNION SELECT cp.complex_id FROM gold.complex_pnu cp     -- 10-28: 인허가가 바뀐 필지의 단지(상세의 인허가 칸)
+                    WHERE cp.pnu IN (SELECT a.pnu FROM silver.arch_permit a WHERE a.mgm_pmsrgst_pk IN (SELECT pk FROM hub.month_chg WHERE 월 = %s AND code = '0101'))""", (M, M))
     ids = [r[0] for r in cur.fetchall()]
     pg = pg_conn(env())
     with pg.cursor() as c:

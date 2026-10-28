@@ -39,6 +39,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--all-complex-pnu", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--min-hhld", type=int, default=1, help="2026-10-28 전국: 세대가 이 이상인 단지만(기본 1 = 예전과 같음)")
     ap.add_argument("--refresh-days", type=int, default=0)
     ap.add_argument("--workers", type=int, default=6)
     a = ap.parse_args()
@@ -53,14 +54,14 @@ def main():
     대상 = ("SELECT DISTINCT cp.pnu FROM gold.complex_pnu cp JOIN gold.complex c ON c.complex_id = cp.complex_id "
            "WHERE c.merged_into IS NULL" if a.all_complex_pnu else
            "SELECT DISTINCT c.rep_pnu FROM gold.complex c WHERE c.merged_into IS NULL AND c.rep_pnu IS NOT NULL "
-           "AND c.hhld_cnt_sum > 0")
+           f"AND c.hhld_cnt_sum >= {max(1, int(a.min_hhld))}")
     덜 = ("AND NOT EXISTS (SELECT 1 FROM silver.land_use_done d WHERE d.pnu = x.pnu"
          + (f" AND d.받은시각 > DATEADD(DAY, -{int(a.refresh_days)}, SYSDATETIME())" if a.refresh_days else "") + ")")
     cur.execute(f"SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT x.pnu FROM ({대상}) x(pnu) WHERE x.pnu IS NOT NULL {덜} ORDER BY x.pnu")
     pnus = [r[0] for r in cur.fetchall()]
     if a.limit: pnus = pnus[:a.limit]
     c0.close()
-    print(f"대상 필지 {len(pnus):,} ({'단지의 모든 필지' if a.all_complex_pnu else '세대 있는 단지의 대표 필지'}) · 스레드 {a.workers}", flush=True)
+    print(f"대상 필지 {len(pnus):,} ({'단지의 모든 필지' if a.all_complex_pnu else f'세대 {a.min_hhld} 이상 단지의 대표 필지'}) · 스레드 {a.workers}", flush=True)
     if not pnus: return
 
     lock = threading.Lock(); st = {"n": 0, "rows": 0, "fail": 0, "연속": 0, "t0": time.monotonic()}

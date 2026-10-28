@@ -36,6 +36,9 @@ def fetch(key, arcode):
             with urllib.request.urlopen(u, timeout=90) as r:
                 root = ET.fromstring(r.read())
             err = root.findtext("errcode")
+            # ★ 2026-10-28 전국: 일반구 코드(41465 용인 수지구 등)는 'INFO-200 검색결과가 없습니다' — 어린이집은 시 코드(41460)로 온다.
+            #   '없음' 으로 보고 내리지(is_current=0) **않고** 건너뛴다(None) — 일시 오류로 한 시군구를 통째로 내리지 않게.
+            if err == "INFO-200": return None
             if err: raise RuntimeError(f"{err} {root.findtext('errmsg')}")
             return [{c.tag: (c.text or "").strip() for c in it} for it in root.findall("item")]
         except Exception as ex:
@@ -104,7 +107,10 @@ def main():
         conn = pymssql.connect(server=e.get("DB_HOST", "127.0.0.1"), port=int(e.get("DB_PORT", 11433)), user=e.get("DB_USER", "sa"),
                                password=e.get("DB_PASSWORD", ""), database=e.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
     for n, ac in enumerate(codes, 1):
-        rows = [row(x, ac) for x in fetch(key, ac) if x.get("stcode")]
+        got = fetch(key, ac)
+        if got is None:
+            print(f"  [{n}/{len(codes)}] {ac} 검색결과 없음(INFO-200) — 건너뜀(내리지 않음)", flush=True); continue
+        rows = [row(x, ac) for x in got if x.get("stcode")]
         겹 = [r["stcode"] for r in rows if r["stcode"] in 본]
         if 겹: print(f"  ! {ac}: 다른 시군구와 겹친 코드 {len(겹)} — 앞선 것을 덮는다", flush=True)
         본.update(r["stcode"] for r in rows); 합 += len(rows)

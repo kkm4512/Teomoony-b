@@ -158,6 +158,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lawd", action="append", help="법정동코드 10자리")
     ap.add_argument("--sgg",  action="append", help="시군구코드 5자리")
+    ap.add_argument("--db-list", action="store_true",
+                    help="2026-10-28 전국: 단지 목록을 K-apt 목록 API(법정동마다 1회 · 서비스당 하루 5,000) 대신 이미 받은 silver.kapt_complex 에서")
     ap.add_argument("--ym",   action="append", help="YYYYMM (여러 번 가능)")
     ap.add_argument("--from", dest="ym_from")
     ap.add_argument("--to",   dest="ym_to")
@@ -211,9 +213,17 @@ def main():
         sys.exit("대상 법정동이 없습니다. --lawd 또는 --sgg 를 주세요.")
 
     # 단지 목록은 월과 무관하므로 한 번만 받는다
-    st = progress.Step(f"단지 목록 — 법정동 {len(lawds)}개")
+    st = progress.Step(f"단지 목록 — 법정동 {len(lawds)}개" + (" (DB)" if args.db_list else ""))
     codes = []
-    for lawd in lawds:
+    if args.db_list:
+        # ★ 2026-10-28: 전국 19,487 법정동을 목록 API 로 부르면 K-apt 목록 서비스 하루 한도를 다 쓴다 — 주간 K-apt 갱신이 받아 둔 표를 쓴다
+        cur.execute("SELECT DISTINCT kapt_code FROM silver.kapt_complex WHERE is_current = 1 AND LEFT(bjd_code, 5) IN (" +
+                    ",".join(["%s"] * len(set(l[:5] for l in lawds))) + ")", tuple(sorted(set(l[:5] for l in lawds))))
+        codes = [r[0].strip() for r in cur.fetchall() if r[0]]
+        lawds_api = []
+    else:
+        lawds_api = lawds
+    for lawd in lawds_api:
         j = get(LIST, key, {"bjdCode": lawd, "numOfRows": 500, "pageNo": 1})
         items = (((j or {}).get("response") or {}).get("body") or {}).get("items") or []
         if isinstance(items, dict):

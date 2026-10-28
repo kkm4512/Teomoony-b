@@ -107,6 +107,9 @@ def fetch(key, domain, pnu, retries=3):
                 if r.status_code in (429, 500, 502, 503, 504): 조절.실패()
             else:
                 d = r.json()
+                # ★ 2026-10-28: 봉투가 'landCharacteristicss' 가 아니면(예: 새 시도 코드 12 → 'response') **실패**다 — '없음' 으로 적지 않는다
+                if "landCharacteristicss" not in d:
+                    return [], f"봉투 다름 {list(d)[:2]}"
                 root = d.get("landCharacteristicss") or {}
                 code = str(root.get("resultCode", ""))
                 # ★ 키/도메인이 틀리면 여기서 걸린다. 조용히 0건으로 넘기지 않는다.
@@ -163,6 +166,11 @@ def main():
     ap.add_argument("--sleep", type=float, default=0.03)
     ap.add_argument("--limit", type=int, help="대상 PNU 수 상한(시험용)")
     ap.add_argument("--probe", action="store_true", help="한 필지만 떠보고 끝낸다")
+    ap.add_argument("--complex-min-hhld", type=int, default=0,
+                    help="2026-10-28 전국: 세대가 이 이상인 단지의 필지만(시군구 대신) — 필지 4천만 곳을 다 부를 수 없어서")
+    ap.add_argument("--skip-sido", nargs="*", default=["12"],
+                    help="2026-10-28: VWorld 토지특성이 아직 모르는 새 시도 코드 — 12(전남광주통합특별시)는 'response' 봉투로 0건이 온다(옛 29·46 코드). "
+                         "그대로 부르면 전부 '없음' 으로 적혀 다시 안 묻는다 → 빼 둔다. 빈 목록이면 안 뺀다")
     ap.add_argument("--recheck-none", action="store_true", help="'토지특성 없음' 으로 적어 둔 필지도 다시 묻는다")
     ap.add_argument("--rps", type=float, default=4.0, help="처음 초당 요청 수(스스로 올리고 내린다). VWorld NED 는 초당 5 남짓이 오래 버틴다(2026-10-24 실측)")
     ap.add_argument("--max-rps", type=float, default=6.0)
@@ -193,7 +201,11 @@ def main():
     #   화면에서 쓸 데가 없다(지도에 못 그린다). 그래서 필지 적재가 끝난 만큼만 받는다.
     q = ["SELECT p.pnu FROM silver.cadastral_parcel p WHERE p.is_current = 1"]
     prm = []
-    if a.lawd:
+    if a.complex_min_hhld:
+        q.append("""AND p.pnu IN (SELECT cp.pnu FROM gold.complex_pnu cp JOIN gold.complex c ON c.complex_id = cp.complex_id
+                                   WHERE c.merged_into IS NULL AND c.hhld_cnt_sum >= %s)""")
+        prm.append(a.complex_min_hhld)
+    elif a.lawd:
         q.append("AND LEFT(p.pnu,10) IN (" + ",".join(["%s"] * len(a.lawd)) + ")")
         prm += list(a.lawd)
     else:
@@ -204,6 +216,8 @@ def main():
             a.sgg = 대상시군구(cur=cur)
         q.append("AND LEFT(p.pnu,5) IN (" + ",".join(["%s"] * len(a.sgg)) + ")")
         prm += list(a.sgg)
+    for sd in (a.skip_sido or []):
+        q.append("AND p.pnu NOT LIKE %s"); prm.append(sd + "%")
     if a.skip_loaded:
         q.append("""AND NOT EXISTS (SELECT 1 FROM silver.land_char lc
                                      WHERE lc.pnu = p.pnu AND lc.is_current = 1)""")
