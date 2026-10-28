@@ -2146,5 +2146,60 @@
     "-NoProfile",
     "-Command",
     "while (Test-Path '_queue\\zc-cad-guji-par.job') { Start-Sleep 20 }; python svc_markers_only.py --now; python load_rtms.py --rematch-only; 'rematch ' + $LASTEXITCODE; python svc_markers_only.py --now; '끝 ' + (Get-Date -Format 'HH:mm')"
+  ],
+  "zs-366-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\366_collect_schedule.sql"
+  ],
+  "zs-367-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\367_collect_schedule_seed.sql"
+  ],
+  "cl-svc-hourly-par": [
+    "python",
+    "svc_hourly_auto.py"
+  ],
+  "cl-lawd-par": [
+    "python",
+    "load_lawd_api.py",
+    "--apply"
+  ],
+  "cl-rtms-recent-par": [
+    "python",
+    "rtms_recent.py",
+    "--months",
+    "3",
+    "--workers",
+    "8"
+  ],
+  "zc-collect-cron-bg": [
+    "python",
+    "collect_cron.py"
+  ],
+  "zt-collect-once-par": [
+    "python",
+    "collect_cron.py",
+    "--once"
+  ],
+  "zk-kill-collect-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'collect_cron.py' -and $_.CommandLine -notmatch '--once' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zs-368-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\368_collect_schedule_all.sql"
+  ],
+  "cl-rtms-year-par": [
+    "python",
+    "rtms_recent.py",
+    "--months",
+    "12",
+    "--workers",
+    "8"
   ]
 }
