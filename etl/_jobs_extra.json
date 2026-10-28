@@ -2348,5 +2348,55 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\_p_372chk.sql"
+  ],
+  "zp-frag-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_frag.sql"
+  ],
+  "zp-frag2-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_frag2.sql"
+  ],
+  "zp-frag3-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_frag3.sql"
+  ],
+  "zp-frag4-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_frag4.sql"
+  ],
+  "zp-frag5-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_frag5.sql"
+  ],
+  "zp-frag6-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_frag6.sql"
+  ],
+  "zq-373-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\373_merge_frag_plan.sql"
+  ],
+  "zq-374-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\374_merge_frag_apply.sql"
+  ],
+  "zs-merge-sync-par": [
+    "python",
+    "svc_merge_sync.py",
+    "373"
+  ],
+  "zp-sess-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\987_sessions.sql"
   ]
 }
