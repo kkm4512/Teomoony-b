@@ -2436,5 +2436,36 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\376_schedule_hub_month_on.sql"
+  ],
+  "zp-kapt-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_kapt.sql"
+  ],
+  "zp-procdef3-par": [
+    "python",
+    "-c",
+    "import sys;sys.path.insert(0,'.');from svc_publish import env,ms_conn;c=ms_conn(env()).cursor();\nfor n in ['gold.usp_refresh_complex_kapt','gold.usp_refresh_kapt_road_link','gold.v_complex_kapt']:\n  c.execute(\"SELECT OBJECT_DEFINITION(OBJECT_ID('\"+n+\"'))\");open('..\\\\logs\\\\def_'+n.split('.')[1]+'.sql','w',encoding='utf-8').write(c.fetchone()[0] or '')\nprint('ok')"
+  ],
+  "zp-kapt2-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_kapt2.sql"
+  ],
+  "zq-377-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\377_kapt_pnu_link.sql"
+  ],
+  "zp-kapt3-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_kapt3.sql"
+  ],
+  "zs-dirty-kapt-par": [
+    "python",
+    "svc_dirty_sql.py",
+    "SELECT complex_id FROM gold.kapt_pnu_link",
+    "K-apt 넷째 길 377"
   ]
 }
