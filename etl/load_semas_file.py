@@ -9,7 +9,11 @@
 import argparse, csv, io, os, sys, time, zipfile
 from svc_publish import env, ms_conn
 def log(*a): print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
-ap = argparse.ArgumentParser(); ap.add_argument("zip"); ap.add_argument("--base", required=True); a = ap.parse_args()
+ap = argparse.ArgumentParser(); ap.add_argument("zip"); ap.add_argument("--base", required=True)
+# ★ 2026-10-28 분기 갱신(semas_check.py 가 씀): **새것이 이긴다** — 파일 기준일보다 옛 줄만 건드린다(API 로 더 늦게 받은 줄은 그대로).
+#   ① 파일에 있고 값이 다르면: 옛 줄 닫고(is_current=0 · valid_to) 새 줄 ② 파일에 없으면: 그 기준일에 목록에서 빠진 것 → 닫기만(지우지 않음 · 이력 그대로)
+#   ③ 파일이 덜 왔으면(시도 하나가 빠지거나 지금의 70% 미만) **아무것도 안 바꾸고 멈춘다** — 덜 온 파일로 한 시도를 통째로 닫지 않게.
+ap.add_argument("--refresh", action="store_true"); a = ap.parse_args()
 ms = ms_conn(env()); cur = ms.cursor()
 z = zipfile.ZipFile(a.zip)
 files = [i for i in z.infolist() if i.filename.lower().endswith(".csv")]
@@ -68,6 +72,26 @@ cols = ["bizes_id", "bizes_nm", "brch_nm", "inds_lcls_cd", "inds_lcls_nm", "inds
         "signgu_cd", "adong_cd", "adong_nm", "ldong_cd", "ldong_nm", "pnu", "lno_adr", "bld_mng_no", "bld_nm", "rdnm_adr", "flr_no", "ho_no", "lon", "lat"]
 hexpr = "HASHBYTES('SHA2_256', CAST(CONCAT_WS(N'|', " + ", ".join(f"ISNULL(CAST(n.[{c}] AS NVARCHAR(400)), N'')" for c in cols) + ") AS VARBINARY(MAX)))"
 st = time.time()
+if a.refresh:
+    cur.execute("""SELECT k = COALESCE(f.s, c.s), 파일 = ISNULL(f.n, 0), 지금 = ISNULL(c.n, 0) FROM
+        (SELECT s = LEFT(signgu_cd, 2), n = COUNT(*) FROM #n WHERE rn = 1 AND bizes_id IS NOT NULL GROUP BY LEFT(signgu_cd, 2)) f
+        FULL JOIN (SELECT s = LEFT(signgu_cd, 2), n = COUNT(*) FROM silver.semas_store WHERE is_current = 1 GROUP BY LEFT(signgu_cd, 2)) c ON c.s = f.s
+        ORDER BY 1""")
+    짝 = cur.fetchall(); 모자람 = [f"{k}: 파일 {f:,} · 지금 {c:,}" for k, f, c in 짝 if k and c >= 1000 and f < c * 0.7]
+    log("시도별 파일/지금: " + " · ".join(f"{k}:{f:,}/{c:,}" for k, f, c in 짝))
+    if 모자람: sys.exit("파일이 덜 온 것 같다 — 아무것도 안 바꾸고 멈춤: " + " · ".join(모자람))
+    cur.execute(f"""SET XACT_ABORT ON; BEGIN TRAN;
+UPDATE s SET is_current = 0, valid_to = SYSDATETIME()
+  FROM silver.semas_store s JOIN #n n ON n.rn = 1 AND n.bizes_id = s.bizes_id
+ WHERE s.is_current = 1 AND s.collected_at < %s AND s.row_hash <> {hexpr};
+DECLARE @바뀜 INT = @@ROWCOUNT;
+UPDATE s SET is_current = 0, valid_to = SYSDATETIME()
+  FROM silver.semas_store s
+ WHERE s.is_current = 1 AND s.collected_at < %s AND NOT EXISTS (SELECT 1 FROM #n n WHERE n.rn = 1 AND n.bizes_id = s.bizes_id);
+DECLARE @빠짐 INT = @@ROWCOUNT;
+SELECT @바뀜, @빠짐;""", (a.base, a.base))   # ★ 아직 COMMIT 안 함 — 아래 새 줄 넣기까지 한 묶음(중간에 죽으면 닫은 것도 되돌아감)
+    바뀜, 빠짐 = cur.fetchone()
+    log(f"분기 갱신 — 값 바뀐 점포 옛 줄 닫음 {바뀜:,} · 파일에서 빠진 점포 닫음 {빠짐:,} · {time.time()-st:.0f}초")
 cur.execute(f"""INSERT INTO silver.semas_store ({', '.join(cols)}, geog, collected_at, row_hash)
 SELECT {', '.join('n.' + c for c in cols)},
        CASE WHEN n.lat BETWEEN -90 AND 90 AND n.lon BETWEEN -180 AND 180 THEN geography::Point(n.lat, n.lon, 4326) END,
@@ -77,6 +101,7 @@ SELECT {', '.join('n.' + c for c in cols)},
    AND NOT EXISTS (SELECT 1 FROM silver.semas_store s WHERE s.is_current = 1 AND s.bizes_id = n.bizes_id);
 SELECT @@ROWCOUNT;""", (a.base,))
 new = cur.fetchone()[0]
+if a.refresh: cur.execute("COMMIT")
 log(f"새로 넣음 {new:,} · {time.time()-st:.0f}초")
 cur.execute("SELECT LEFT(signgu_cd, 2), COUNT(*) FROM silver.semas_store WHERE is_current = 1 GROUP BY LEFT(signgu_cd, 2) ORDER BY 1")
 log("시도별 지금 점포: " + " · ".join(f"{s}:{n:,}" for s, n in cur.fetchall()))

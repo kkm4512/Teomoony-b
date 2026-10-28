@@ -170,6 +170,17 @@ def publish_markers(ms, pg):
                          SELECT 'adm', a.cd, count(*) FROM _adm a
                            JOIN svc.complex_marker_new m ON ST_Intersects(a.g, ST_SetSRID(ST_MakePoint(m.centroid_lng, m.centroid_lat), 4326))
                           GROUP BY a.cd ON CONFLICT DO NOTHING""")
+        # ★ 2026-10-28 사장님 "실거래 있다고 뜨는데 없어": 실거래 다시 잇기(match_complex_id 만 바뀜)는 changed_ids(loaded_at)에 안 잡힌다 —
+        #   마커는 새 값, 상세는 옛 값이 나갔다(김제 대방아파트). 옛 마커와 새 마커의 실거래 칸이 다른 단지를 '상세 다시' 표에 적어 둔다.
+        #   표로 남기는 까닭: 마커만 다시 하는 실행(svc_markers_only)이 먼저 돌아도 잃지 않게 — 매시 발행이 꺼내 다시 담고 지운다.
+        c.execute("CREATE TABLE IF NOT EXISTS svc.detail_dirty (complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())")
+        c.execute("SELECT to_regclass('svc.complex_marker') IS NOT NULL")
+        if c.fetchone()[0]:
+            c.execute("""INSERT INTO svc.detail_dirty (complex_id, why)
+                         SELECT n.complex_id, '마커 실거래 칸 바뀜' FROM svc.complex_marker_new n JOIN svc.complex_marker o USING (complex_id)
+                          WHERE (n.trade_cnt, n.rent_cnt, n.area_grp, n.max_amount, n.max_ymd) IS DISTINCT FROM (o.trade_cnt, o.rent_cnt, o.area_grp, o.max_amount, o.max_ymd)
+                         ON CONFLICT (complex_id) DO NOTHING""")
+            print(f"  상세 다시 표에 적음 {c.rowcount:,}(마커 실거래 칸 바뀜)", flush=True)
     pg.commit()
     import psycopg.errors   # 바꿔 끼우기는 짧게 + 잠금 3초 제한(svc_layers 와 같은 이유)
     for 번 in range(20):
@@ -196,8 +207,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["full", "hourly", "ids"], default="hourly")
     ap.add_argument("--ids", nargs="*", type=int)
+    ap.add_argument("--ids-file", default="", help="ids: 줄마다 단지 번호 하나(10-28 svc_trade_stale)")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--limit", type=int, default=0, help="이번에 담을 단지 수 상한(0 = 없음)")
+    ap.add_argument("--dirty", type=int, default=3000, help="hourly 때 '상세 다시' 표에서 몇 개 꺼내나")
     ap.add_argument("--backlog", type=int, default=3000, help="hourly 때 밀린(아직 안 담긴) 단지를 몇 개 더 담나")
     ap.add_argument("--kinds", default="", help="쉼표로 — 비우면 세대 수에 따라")
     ap.add_argument("--rebuild", action="store_true", help="이미 담긴 것도 다시 받는다(full)")
@@ -241,7 +254,8 @@ def main():
         h, s = info.get(cid, (0, None)); return (-(h or 0), 0 if (s or '')[:2] in ('11', '28', '41') else 1, cid)
     want = []
     if a.mode == "ids":
-        ids = a.ids or []
+        ids = list(a.ids or [])
+        if a.ids_file: ids += [int(x) for x in open(a.ids_file, encoding="utf-8").read().split() if x.strip().isdigit()]
         want = [(cid, k) for cid in ids for k in (a.kinds.split(",") if a.kinds else kinds_for(info.get(cid, (0,))[0]))]
     elif a.mode == "full":
         for cid in sorted(info, key=순위):
@@ -255,6 +269,14 @@ def main():
         담김 = {cid for cid, k in have if k == "detail"}
         ch_all = changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None))
         ch = [cid for cid in ch_all if cid in info and cid in 담김]
+        # 10-28: '상세 다시' 표(마커 실거래 칸이 바뀐 단지) — 세대 많은 곳부터 a.dirty 개까지. 끝나면 받은 것만 지운다(아래)
+        with pg.cursor() as c:
+            c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
+            dirty = [r[0] for r in c.execute("SELECT complex_id FROM svc.detail_dirty").fetchall()] if c.fetchone()[0] else []
+        pg.commit()
+        dirty = sorted([cid for cid in dirty if cid in info and cid in 담김], key=순위)[: a.dirty]
+        chs = set(ch); ch += [cid for cid in dirty if cid not in chs]
+        print(f"  상세 다시 표에서 {len(dirty):,}", flush=True)
         # 지나며 담긴 응답(호 상세 · 주변 지점 · 점포 목록)은 그 단지가 바뀌면 지운다 — 다음 요청 때 옛 경로가 새로 답하고 다시 담긴다
         with pg.cursor() as c:
             c.execute("DELETE FROM svc.resp_cache WHERE complex_id = ANY(%s)", (list(ch_all) or [0],))
@@ -275,7 +297,7 @@ def main():
         c.execute("SELECT complex_id, kind, sha FROM svc.complex_json WHERE complex_id = ANY(%s)", (list({w[0] for w in want}) or [0],))
         old = {(r[0], r[1]): r[2] for r in c.fetchall()}
     pg.commit()   # 10-25: 읽기 뒤 트랜잭션을 닫는다 — 열어 둔 채 받기(수 분)를 하면 서비스DB 가 2분에 끊는다(idle_in_transaction_session_timeout)
-    new = chg = same = bad = 0; buf = []; 시간 = {}
+    new = chg = same = bad = 0; buf = []; 시간 = {}; 담은 = set()
     def flush():
         nonlocal buf
         if not buf: return
@@ -298,6 +320,7 @@ def main():
             done = next(as_completed(진행)); 진행.discard(done)
             cid, kind, st, body, dt = done.result(); n += 1
             시간.setdefault(kind, []).append(dt)
+            if st is not None: 담은.add((cid, kind))
             if st is None:
                 bad += 1
                 if bad <= 20: print(f"  !! {cid}/{kind}: {body}", flush=True)
@@ -317,6 +340,14 @@ def main():
             if not (끝시각 and time.time() > 끝시각): 채우기()
     flush()
     st = "ok" if bad == 0 or bad < max(10, n * 0.01) else "failed"
+    # 10-28: 다시 담은 단지는 '상세 다시' 표에서 뺀다(ids 로 다시 담은 것도) — 실패한 단지는 남겨 다음 때 다시
+    done_ids = list({w[0] for w in want if (w[0], "detail") in 담은} if 담은 else set())
+    if done_ids:
+        with pg.cursor() as c:
+            c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
+            if c.fetchone()[0]:
+                c.execute("DELETE FROM svc.detail_dirty WHERE complex_id = ANY(%s)", (done_ids,)); print(f"  상세 다시 표에서 뺌 {c.rowcount:,}", flush=True)
+        pg.commit()
     with pg.cursor() as c:
         c.execute("""UPDATE svc.publish SET finished_at = now(), status = %s, rows_new = %s, rows_changed = %s, rows_same = %s, rows_failed = %s,
                      note = note || %s WHERE publish_id = %s""",

@@ -1118,7 +1118,7 @@
     "--mode",
     "full",
     "--min-hhld",
-    "0",
+    "20",
     "--workers",
     "6"
   ],
@@ -2201,5 +2201,70 @@
     "12",
     "--workers",
     "8"
+  ],
+  "zp-robots-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "(Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 'http://localhost:5173/robots.txt').Content"
+  ],
+  "zs-369-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\369_schedule_hub20.sql"
+  ],
+  "zp-semas-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_semas.sql"
+  ],
+  "zp-dbang-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_dbang.sql"
+  ],
+  "zs-trade-stale-par": [
+    "python",
+    "svc_trade_stale.py"
+  ],
+  "zs-trade-stale-fix-par": [
+    "python",
+    "svc_trade_stale.py",
+    "--fix"
+  ],
+  "zs-pub-one-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "ids",
+    "--kinds",
+    "detail",
+    "--ids",
+    "6402309"
+  ],
+  "zr-semas-page-par": [
+    "python",
+    "_semas_page_probe.py"
+  ],
+  "cl-semas-par": [
+    "python",
+    "semas_check.py"
+  ],
+  "zs-pub-stale-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "ids",
+    "--kinds",
+    "detail",
+    "--workers",
+    "6",
+    "--ids-file",
+    "..\\logs\\svc_trade_stale_ids.txt"
+  ],
+  "zq-370-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\370_semas_schedule_on.sql"
   ]
 }
