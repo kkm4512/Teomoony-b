@@ -123,6 +123,11 @@ def main():
     ap.add_argument("--sgg", nargs="*"); ap.add_argument("--tile", type=float, default=0.01)
     ap.add_argument("--rps", type=float, default=2); ap.add_argument("--max-rps", type=float, default=4); ap.add_argument("--rest", type=float, default=30)
     ap.add_argument("--workers", type=int, default=6); ap.add_argument("--skip-done", action="store_true")
+    # ★ 2026-10-29 전국(사장님 "남은것도 너가해"): 시군구 상자 전체를 썰면 전국 10만 조각이 넘는다(초당 2~4 → 반나절+).
+    #   --complex-min-hhld N 이면 **N세대 이상 단지 필지가 걸친 조각만** 받는다(단지 상세의 위반 표시가 목적).
+    #   이 방식은 시군구를 '다 받음'(silver.bld_gis_done)으로 적지 않는다 — 단지 밖 건물은 안 받았으니까.
+    #   대신 ops.bld_gis_done_cplx(시군구 · 세대 기준)에 적고 --skip-done 이면 그걸로 건너뛴다.
+    ap.add_argument("--complex-min-hhld", type=int, default=0)
     a = ap.parse_args()
     조절 = 조절기(a.rps, a.max_rps, a.rest)
     e = env(); key = e.get("VWORLD_KEY", ""); dom = (e.get("VWORLD_DOMAIN") or "teomoony.com").strip()
@@ -132,8 +137,32 @@ def main():
     cur = conn.cursor()
     sggs = a.sgg or 대상시군구(cur=cur)
     done = set()
+    if a.complex_min_hhld:
+        cur.execute("""IF OBJECT_ID('ops.bld_gis_done_cplx') IS NULL
+            CREATE TABLE ops.bld_gis_done_cplx (sgg_cd CHAR(5) NOT NULL, min_hhld INT NOT NULL, 조각 INT NOT NULL, 수신 INT NOT NULL,
+                건물 INT NOT NULL, 실패조각 INT NOT NULL, 받은시각 DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+                CONSTRAINT pk_bld_gis_done_cplx PRIMARY KEY (sgg_cd, min_hhld))"""); conn.commit()
     if a.skip_done:
         cur.execute("SELECT sgg_cd FROM silver.bld_gis_done WHERE 실패조각 = 0"); done = {r[0] for r in cur.fetchall()}
+        if a.complex_min_hhld:
+            cur.execute("SELECT sgg_cd FROM ops.bld_gis_done_cplx WHERE 실패조각 = 0 AND min_hhld <= %s", (a.complex_min_hhld,))
+            done |= {r[0] for r in cur.fetchall()}
+    칸 = None
+    if a.complex_min_hhld:
+        # 단지 필지 상자 → a.tile 격자 칸(시군구별). 칸 하나 = 조각 하나.
+        cur.execute("""SELECT LEFT(p.pnu,5), p.bbox_minx, p.bbox_miny, p.bbox_maxx, p.bbox_maxy
+                         FROM gold.complex_pnu cp JOIN gold.complex c ON c.complex_id = cp.complex_id
+                         JOIN silver.cadastral_parcel p ON p.pnu = cp.pnu AND p.is_current = 1
+                        WHERE c.merged_into IS NULL AND c.hhld_cnt_sum >= %s AND p.bbox_minx IS NOT NULL""", (a.complex_min_hhld,))
+        import math
+        칸 = {}
+        for sg, x0, y0, x1, y1 in cur.fetchall():
+            x0, y0, x1, y1 = float(x0), float(y0), float(x1), float(y1)
+            for i in range(math.floor(x0 / a.tile), math.floor(x1 / a.tile) + 1):
+                for j in range(math.floor(y0 / a.tile), math.floor(y1 / a.tile) + 1):
+                    칸.setdefault(sg, set()).add((i, j))
+        if not a.sgg: sggs = sorted(칸)
+        print(f"단지 {a.complex_min_hhld}세대+ 조각만: 시군구 {len(칸)} · 조각 {sum(len(v) for v in 칸.values()):,}", flush=True)
     cur.execute("""SELECT LEFT(pnu,5), MIN(bbox_minx), MIN(bbox_miny), MAX(bbox_maxx), MAX(bbox_maxy) FROM silver.cadastral_parcel
                     WHERE is_current = 1 GROUP BY LEFT(pnu,5)""")
     상자 = {r[0]: [float(x) for x in r[1:]] for r in cur.fetchall()}
@@ -145,6 +174,9 @@ def main():
             print(f"  {sgg}: 필지 경계가 없어 건너뜀(지적도 먼저)", flush=True); continue
         x0, y0, x1, y1 = 상자[sgg]; pad = 0.0005
         boxes = []
+        if 칸 is not None:
+            boxes = [(round(i * a.tile, 6), round(j * a.tile, 6), round((i + 1) * a.tile, 6), round((j + 1) * a.tile, 6)) for i, j in sorted(칸.get(sgg, ()))]
+            x1 = x0 - 1   # 아래 전체 썰기를 건너뛴다
         x = x0 - pad
         while x < x1 + pad:
             y = y0 - pad
@@ -164,7 +196,13 @@ def main():
         새 = 바뀜 = 0
         for i in range(0, len(rows), 3000):
             n, c = 쓰기(conn, rows[i:i + 3000]); 새 += n; 바뀜 += c
-        cur.execute("""MERGE silver.bld_gis_done t USING (SELECT %s sgg_cd) s ON t.sgg_cd = s.sgg_cd
+        if 칸 is not None:
+            cur.execute("""MERGE ops.bld_gis_done_cplx t USING (SELECT %s sgg_cd, %s min_hhld) s ON t.sgg_cd = s.sgg_cd AND t.min_hhld = s.min_hhld
+                           WHEN MATCHED THEN UPDATE SET 조각 = %s, 수신 = %s, 건물 = %s, 실패조각 = %s, 받은시각 = SYSDATETIME()
+                           WHEN NOT MATCHED THEN INSERT (sgg_cd, min_hhld, 조각, 수신, 건물, 실패조각) VALUES (%s, %s, %s, %s, %s, %s);""",
+                        (sgg, a.complex_min_hhld, 요청, 수신, len(rows), 실패, sgg, a.complex_min_hhld, 요청, 수신, len(rows), 실패))
+        else:
+          cur.execute("""MERGE silver.bld_gis_done t USING (SELECT %s sgg_cd) s ON t.sgg_cd = s.sgg_cd
                        WHEN MATCHED THEN UPDATE SET 조각 = %s, 수신 = %s, 건물 = %s, 실패조각 = %s, 받은시각 = SYSDATETIME()
                        WHEN NOT MATCHED THEN INSERT (sgg_cd, 조각, 수신, 건물, 실패조각) VALUES (%s, %s, %s, %s, %s);""",
                     (sgg, 요청, 수신, len(rows), 실패, sgg, 요청, 수신, len(rows), 실패))

@@ -3587,7 +3587,14 @@
   ],
   "zp-lcprobe": [
     "python",
-    "_lc_probe.py"
+    "load_land_char.py",
+    "--complex-min-hhld",
+    "20",
+    "--skip-loaded",
+    "--limit",
+    "3",
+    "--workers",
+    "1"
   ],
   "zp-lcprobe2": [
     "python",
@@ -3631,5 +3638,117 @@
   "cl-hub-month": [
     "python",
     "hub_month.py"
+  ],
+  "zn-closed-build": [
+    "python",
+    "closed_swap.py",
+    "build"
+  ],
+  "zn-closed-swap": [
+    "python",
+    "closed_swap.py",
+    "swap"
+  ],
+  "zq-381": [
+    "cmd",
+    "/c",
+    "python ms_q.py ..\\deploy\\sql\\381_closed_hub_pk.sql && python closed_swap.py check && python closed_swap.py swap"
+  ],
+  "zn-closedsite-par": [
+    "python",
+    "closed_site_nation.py"
+  ],
+  "zq-askattr-fix": [
+    "cmd",
+    "/c",
+    "python proc_patch.py gold.usp_ask_attr_build \"SUM(p.geom.STIntersection(r.geom).STArea())\" \"SUM(p.geom.MakeValid().STIntersection(r.geom.MakeValid()).STArea())\" && python proc_patch.py gold.usp_ask_attr_build \"SUM(p.geom.STIntersection(z.geom).STArea())\" \"SUM(p.geom.MakeValid().STIntersection(z.geom.MakeValid()).STArea())\""
+  ],
+  "zq-askattr-fix1": [
+    "python",
+    "proc_patch.py",
+    "gold.usp_ask_attr_build",
+    "SUM(p.geom.STIntersection(r.geom).STArea())",
+    "SUM(p.geom.MakeValid().STIntersection(r.geom.MakeValid()).STArea())"
+  ],
+  "zq-askattr-fix2": [
+    "python",
+    "proc_patch.py",
+    "gold.usp_ask_attr_build",
+    "SUM(p.geom.STIntersection(z.geom).STArea())",
+    "SUM(p.geom.MakeValid().STIntersection(z.geom.MakeValid()).STArea())"
+  ],
+  "zp-runs": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_runs.sql"
+  ],
+  "zp-lawdnm": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_lawdnm.sql"
+  ],
+  "zp-ahtest": [
+    "python",
+    "_ah_test.py"
+  ],
+  "zp-ah296": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\296_applyhome_road.sql"
+  ],
+  "zp-ahq": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\_p_ah1.sql"
+  ],
+  "zp-ahnation": [
+    "python",
+    "load_applyhome.py",
+    "--nation"
+  ],
+  "zp-admnation": [
+    "python",
+    "adm_nation.py"
+  ],
+  "zk-kill-closedsite-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'closed_site_nation' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zp-ahtest-par": [
+    "python",
+    "_ah_test.py"
+  ],
+  "zp-ahnation-par": [
+    "python",
+    "load_applyhome.py",
+    "--nation"
+  ],
+  "zp-lcprobe-par": [
+    "python",
+    "load_land_char.py",
+    "--complex-min-hhld",
+    "20",
+    "--skip-loaded",
+    "--limit",
+    "3",
+    "--workers",
+    "1"
+  ],
+  "zn-bldgis-par": [
+    "python",
+    "load_bld_gis.py",
+    "--complex-min-hhld",
+    "20",
+    "--skip-done",
+    "--rps",
+    "3",
+    "--max-rps",
+    "5"
+  ],
+  "cl-applyhome-par": [
+    "python",
+    "applyhome_cron.py"
   ]
 }

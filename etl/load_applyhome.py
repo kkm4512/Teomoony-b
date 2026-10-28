@@ -86,7 +86,9 @@ def pages(key, op, cond):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--probe", action="store_true"); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("--probe", action="store_true")
+    # ★ 2026-10-29 사장님 "남은것도 너가해": 전국 — 지역 거르기 없이 받고 주소는 applyhome_addr(전국 · 마스터 이름 글자 그대로 · 하나일 때만)로 푼다
+    ap.add_argument("--nation", action="store_true"); a = ap.parse_args()
     e = env(); key = e.get("DATA_GO_KR_KEY", "")
     if not key: sys.exit(".env 의 DATA_GO_KR_KEY 가 비어 있습니다")
 
@@ -98,6 +100,15 @@ def main():
              ("OPT", "getOPTLttotPblancDetail", "getOPTLttotPblancMdl")]                   # 임의공급
     pbl, mdl = [], []
     for kind, op_d, op_m in KINDS:
+        if a.nation:
+            these = pages(key, op_d, {})
+            for x in these: x["_kind"] = kind
+            pbl += these; m0 = len(mdl)
+            nos = {x["HOUSE_MANAGE_NO"] for x in these}
+            for m in pages(key, op_m, {}):            # 주택형도 통째로(공고마다 부르면 수천 번)
+                if m.get("HOUSE_MANAGE_NO") in nos: m["_kind"] = kind; mdl.append(m)
+            print(f"{kind}: 공고 전국 {len(these)} · 주택형 {len(mdl) - m0}", flush=True)
+            continue
         seoul = pages(key, op_d, {"cond[SUBSCRPT_AREA_CODE_NM::EQ]": "서울"})
         gg    = pages(key, op_d, {"cond[SUBSCRPT_AREA_CODE_NM::EQ]": "경기"})
         these = seoul + [x for x in gg if "안양시" in (x.get("HSSPLY_ADRES") or "")]
@@ -123,7 +134,13 @@ def main():
         by[(sgg, emd)] = cd
         if cd.startswith(("41171", "41173")): anyang.setdefault(emd, []).append(cd)
 
+    if a.nation:
+        from applyhome_addr import 사전, 조각 as 조각전국
+        cur.execute("IF COL_LENGTH('silver.applyhome_pblanc', '주소_sgg_cd') IS NULL ALTER TABLE silver.applyhome_pblanc ADD 주소_sgg_cd CHAR(5) NULL"); conn.commit()
+        cur.execute("SELECT lawd_cd, sido_nm, sgg_nm, emd_nm, ri_nm, is_abolished FROM meta.lawd_code"); 전국사전 = 사전(cur.fetchall())
     def 풀기(adr):
+        if a.nation:
+            d = 조각전국(adr, 전국사전); return d, d["cd"]
         d = 조각(adr)
         if not d["emd"]: return d, None
         sgg, emd = d["sgg"], d["emd"]
@@ -164,6 +181,8 @@ def main():
                              rcept_endde, przwner_de, mvn_prearnge_ym, bsns_mby_nm, cnstrct_entrps_nm, pblanc_url, subscrpt_area_nm,
                              raw_json, 공고종류, house_manage_no, pblanc_no)
                            VALUES (""" + ",".join(["%s"] * 29) + ")", vals + k)
+        if a.nation:
+            cur.execute("UPDATE silver.applyhome_pblanc SET 주소_sgg_cd = %s WHERE house_manage_no = %s AND pblanc_no = %s", (d.get("sgg_cd"),) + k)
         n += 1
     for x in mdl:
         ty = x.get("HOUSE_TY") or x.get("TP") or ""
@@ -190,6 +209,7 @@ def main():
                              raw_json, house_manage_no, pblanc_no, model_no) VALUES (""" + ",".join(["%s"] * 10) + ")", vals + k)
     conn.commit()
     print(f"넣음: 공고 {n} (법정동 못 찾음 {못}) · 주택형 {len(mdl)}", flush=True)
+    # (296 도로명 → 지번은 usp_refresh_applyhome_link 안에서 부른다 — 전국은 주소_sgg_cd 로)
     cur.execute("EXEC gold.usp_refresh_applyhome_link")
     r = cur.fetchone(); conn.commit()
     if r: print(f"연결: 공고 {r[0]} · 법정동 {r[1]} · 필지 {r[2]} · 이음 {r[3]} (단지에 {r[4]} · 대장 없는 신축에 {r[5]})")

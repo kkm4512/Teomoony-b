@@ -109,7 +109,12 @@ def fetch(key, domain, pnu, retries=3):
                 d = r.json()
                 # ★ 2026-10-28: 봉투가 'landCharacteristicss' 가 아니면(예: 새 시도 코드 12 → 'response') **실패**다 — '없음' 으로 적지 않는다
                 if "landCharacteristicss" not in d:
-                    return [], f"봉투 다름 {list(d)[:2]}"
+                    # ★ 10-29: 'response' 봉투 + totalCount 0 + resultCode 빔 = VWorld 가 그 PNU 를 모른다(분할·합병으로 새 PNU 등) → '없음'.
+                    #   단 새 시도 코드 12 는 전부가 이렇게 오므로(VWorld 가 코드를 아직 모름) 실패로 둔다(--skip-sido 12 기본).
+                    rs = d.get("response") if isinstance(d.get("response"), dict) else None
+                    if rs is not None and str(rs.get("totalCount")) == "0" and not rs.get("resultCode") and not pnu.startswith("12"):
+                        조절.성공(); return [], None
+                    return [], f"봉투 다름 {list(d)[:2]} " + json.dumps(d, ensure_ascii=False)[:200].replace(key, "***")
                 root = d.get("landCharacteristicss") or {}
                 code = str(root.get("resultCode", ""))
                 # ★ 키/도메인이 틀리면 여기서 걸린다. 조용히 0건으로 넘기지 않는다.

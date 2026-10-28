@@ -14,6 +14,11 @@ GO
 IF COL_LENGTH('silver.applyhome_pblanc', '주소_도로') IS NULL
     ALTER TABLE silver.applyhome_pblanc ADD 주소_도로 NVARCHAR(80) NULL, 주소_건물본번 INT NULL, 주소_건물부번 INT NULL;
 GO
+/* 2026-10-29 전국: load_applyhome --nation 이 시군구 코드를 적어 둔다(applyhome_addr — 시도+시군구 이름이 하나일 때만).
+   있으면 그 코드로, 없으면 예전처럼(서울 · 안양 이름). 이름이 같은 구(중구 · 동구 …)가 전국에 여럿이라 이름만으론 못 쓴다. */
+IF COL_LENGTH('silver.applyhome_pblanc', '주소_sgg_cd') IS NULL
+    ALTER TABLE silver.applyhome_pblanc ADD 주소_sgg_cd CHAR(5) NULL;
+GO
 IF COL_LENGTH('silver.applyhome_pblanc', '주소근거') < 120
     ALTER TABLE silver.applyhome_pblanc ALTER COLUMN 주소근거 NVARCHAR(60) NULL;
 GO
@@ -28,8 +33,11 @@ BEGIN
       FROM silver.applyhome_pblanc p
      CROSS APPLY (SELECT cd = MIN(lc.lawd_cd), n = COUNT(*) FROM meta.lawd_code lc
                    WHERE lc.ri_nm IS NULL AND lc.is_abolished = 0 AND lc.emd_nm = p.주소_동
-                     AND REPLACE(lc.sgg_nm, ' ', '') = p.주소_시군구
-                     AND (LEFT(lc.lawd_cd, 2) = '11' OR LEFT(lc.lawd_cd, 5) IN ('41171', '41173'))) l
+                     /* 10-29: 리가 있는 읍·면이면 어느 리인지 모른다 — 붙이지 않는다(applyhome_addr · 363 과 같은 규칙) */
+                     AND NOT EXISTS (SELECT 1 FROM meta.lawd_code r WHERE r.is_abolished = 0 AND r.ri_nm IS NOT NULL AND LEFT(r.lawd_cd, 8) = LEFT(lc.lawd_cd, 8))
+                     AND (LEFT(lc.lawd_cd, 5) = p.주소_sgg_cd
+                          OR p.주소_sgg_cd IS NULL AND REPLACE(lc.sgg_nm, ' ', '') = p.주소_시군구
+                             AND (LEFT(lc.lawd_cd, 2) = '11' OR LEFT(lc.lawd_cd, 5) IN ('41171', '41173')))) l
      WHERE p.lawd_cd IS NULL AND p.주소_동 IS NOT NULL AND l.n = 1;
     SET @동 = @@ROWCOUNT;
 
@@ -41,8 +49,10 @@ BEGIN
       INTO #w
       FROM silver.applyhome_pblanc p
      CROSS APPLY (SELECT sgg_cd = MIN(LEFT(lc.lawd_cd, 5)), n = COUNT(DISTINCT LEFT(lc.lawd_cd, 5)) FROM meta.lawd_code lc
-                   WHERE lc.is_abolished = 0 AND REPLACE(lc.sgg_nm, ' ', '') = p.주소_시군구
-                     AND (LEFT(lc.lawd_cd, 2) = '11' OR LEFT(lc.lawd_cd, 5) IN ('41171', '41173'))) s
+                   WHERE lc.is_abolished = 0
+                     AND (LEFT(lc.lawd_cd, 5) = p.주소_sgg_cd
+                          OR p.주소_sgg_cd IS NULL AND REPLACE(lc.sgg_nm, ' ', '') = p.주소_시군구
+                             AND (LEFT(lc.lawd_cd, 2) = '11' OR LEFT(lc.lawd_cd, 5) IN ('41171', '41173')))) s
      WHERE p.lawd_cd IS NULL AND p.주소_도로 IS NOT NULL AND p.주소_건물본번 IS NOT NULL AND s.n = 1
        AND p.주소_도로 NOT LIKE N'%[%[_]%';
 

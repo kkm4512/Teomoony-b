@@ -60,14 +60,14 @@ LAYERS = [
   ("adm", None,
    """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
       SELECT a.adm_cd_sgis, a.year, a.adm_nm, a.emd_nm, a.centroid_lat, a.centroid_lng,
-             a.adm_cd_mois, a.mois_nm, a.상가수, a.연결상가, a.연결비율, a.갈림내역, a.geojson,
+             a.adm_cd_mois, a.mois_nm, a.상가수, a.연결상가, a.연결비율, a.갈림내역, a.geojson, a.geojson_s1, a.geojson_s2,
              연결 = CASE WHEN a.연결비율 >= 90 THEN N'확인' WHEN a.연결비율 IS NOT NULL THEN N'갈림' END,
              a.bbox_minx, a.bbox_miny, a.bbox_maxx, a.bbox_maxy
         FROM silver.adm_boundary a
        WHERE a.year = (SELECT MAX(year) FROM silver.adm_boundary)""",
    [("adm_cd_sgis", "text"), ("year", "text"), ("adm_nm", "text"), ("emd_nm", "text"), ("centroid_lat", D), ("centroid_lng", D),
     ("adm_cd_mois", "text"), ("mois_nm", "text"), ("상가수", "int"), ("연결상가", "int"), ("연결비율", D), ("갈림내역", "text"),
-    ("geojson", "text"), ("연결", "text"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)], []),
+    ("geojson", "text"), ("geojson_s1", "text"), ("geojson_s2", "text"), ("연결", "text"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)], []),
   ("closed", None,
    """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
       SELECT s.site_key, s.pnu, s.shter_day, s.이름, s.이름출처, s.주용도, s.동수, s.총괄세대, s.사용승인일, s.폐쇄구분,

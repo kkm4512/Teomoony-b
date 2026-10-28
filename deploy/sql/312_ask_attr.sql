@@ -195,7 +195,7 @@ BEGIN
         SELECT TOP 0 complex_id, present_sn, xarea, parea INTO #rr FROM gold.complex_redev_hit;
         INSERT INTO #rr (complex_id, present_sn, xarea, parea)
         SELECT cp.complex_id, r.present_sn,
-               SUM(p.geom.STIntersection(r.geom).STArea()), SUM(p.geom.STArea())
+               SUM(p.geom.MakeValid().STIntersection(r.geom.MakeValid()).STArea())   /* 10-29: 전국 필지에서 STIntersection E_FAIL(6522) — MakeValid */, SUM(p.geom.STArea())
           FROM gold.complex_pnu cp
           JOIN silver.cadastral_parcel p
             ON p.pnu = cp.pnu AND p.is_current = 1 AND p.geom IS NOT NULL
@@ -218,7 +218,7 @@ BEGIN
         IF OBJECT_ID('tempdb..#rz') IS NOT NULL DROP TABLE #rz;
         SELECT TOP 0 complex_id, uname, xarea INTO #rz FROM gold.complex_zone_hit;
         INSERT INTO #rz (complex_id, uname, xarea)
-        SELECT cp.complex_id, z.uname, SUM(p.geom.STIntersection(z.geom).STArea())
+        SELECT cp.complex_id, z.uname, SUM(p.geom.MakeValid().STIntersection(z.geom.MakeValid()).STArea())   /* 10-29: 같은 까닭 */
           FROM gold.complex_pnu cp
           JOIN silver.cadastral_parcel p
             ON p.pnu = cp.pnu AND p.is_current = 1 AND p.geom IS NOT NULL

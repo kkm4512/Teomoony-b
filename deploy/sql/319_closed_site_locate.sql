@@ -51,7 +51,7 @@ BEGIN
         SELECT DISTINCT 주소 = CAST(LTRIM(RTRIM(LEFT(b.new_plat_plc, CHARINDEX(N' (', b.new_plat_plc + N' (') - 1))) AS NVARCHAR(200)), cb.complex_id
           INTO #b FROM silver.bld_title b JOIN gold.complex_bld cb ON cb.mgm_bldrgst_pk = b.mgm_bldrgst_pk
          WHERE b.is_current = 1 AND b.new_plat_plc LIKE N'%[0-9]%'
-           AND (@sgg IS NULL OR b.new_plat_plc LIKE (SELECT TOP 1 LEFT(new_plat_plc, 8) FROM gold.closed_site WHERE LEFT(pnu, 5) = @sgg AND new_plat_plc IS NOT NULL) + N'%');
+           AND (@sgg IS NULL OR b.sigungu_cd = @sgg) OPTION (RECOMPILE);   /* 10-29: 전국 대장(750만)을 앞글자 LIKE 로 훑느라 시군구 하나에 50분+ · 메모리 독점 → 시군구 코드로 */
         CREATE INDEX ix ON #b (주소);
         UPDATE s SET lat = c.centroid_lat, lng = c.centroid_lng,
                      위치근거 = LEFT(N'같은 도로명주소(' + h.주소 + N')의 지금 건물 자리', 80)
