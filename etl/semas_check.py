@@ -5,7 +5,7 @@
 ★ 공식 내려받기 길 그대로: 자료 페이지(파일 이름의 기준일) → selectFileDataDownload.do(누리집 '다운로드' 단추가 부르는 것) → fileDownload.do.
   매일은 **페이지만** 본다(기준일이 새로울 때만 내려받기 요청 — 내려받기 수를 부풀리지 않게).
 ★ 받으면 load_semas_file.py --refresh: 새것이 이긴다(파일 기준일보다 옛 줄만) · 빠진 점포는 닫기만(지우지 않음) · 덜 온 파일이면 아무것도 안 바꾸고 멈춤.
-★ 끝나면 zip · 풀어 둔 글 지움(디스크). 기준일은 _semas_file_base.txt 에(실패하면 안 바꿔 다음 날 다시)."""
+★ 끝나면 zip · 풀어 둔 글 지움(디스크) → 매칭테이블 다시 → 발행된 상세 전부 '상세 다시' 표에(뒤에서 천천히). 기준일은 _semas_file_base.txt 에(실패하면 안 바꿔 다음 날 다시)."""
 import json, os, re, shutil, subprocess, sys, time, urllib.parse, urllib.request, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 BULK = os.path.join(HERE, "..", "deploy", "bulk", "semas")
@@ -48,4 +48,24 @@ r = subprocess.run([sys.executable, os.path.join(HERE, "load_semas_file.py"), z,
 if r.returncode != 0: sys.exit(f"적재 실패(종료코드 {r.returncode}) — 기준일 안 바꿈 · zip 남김(다음 때 다시)")
 open(STATE, "w").write(base + "\n")
 os.remove(z); shutil.rmtree(os.path.join(BULK, "_x"), ignore_errors=True)
-log(f"끝 — 기준일 {last} → {base} · zip 지움")
+log(f"적재 끝 — 기준일 {last} → {base} · zip 지움")
+# ★ 10-28 사장님 "너판단으로 ㄱㄱ": 상세에는 상권도 담겨 있다 → ① 매칭테이블(nm)을 **이 적재 뒤에** 다시 만들고
+#   ② 이미 발행된 상세 전부를 '상세 다시' 표에 적는다 — 수집 일정 '상세 다시(밀린 것)'(cl-svc-dirty-par)가 뒤에서 천천히 비운다(실거래 바뀜이 늘 먼저).
+#   nm 이 다른 실행으로 돌고 있으면(잠금) 그건 적재 전 상가를 읽었을 수 있다 → 끝날 때까지 기다렸다가 **우리 것**을 한 번 더 돌린다(최대 3시간).
+for 번 in range(36):
+    r = subprocess.run([sys.executable, os.path.join(HERE, "nm_build.py")], cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    print(r.stdout[-3000:], r.stderr[-2000:], flush=True)
+    if r.returncode == 0 and "다른 nm_build 가 도는 중" not in r.stdout: break
+    if r.returncode != 0: sys.exit(f"매칭테이블 다시 만들기 실패(종료코드 {r.returncode}) — 상가는 들어갔음 · 상세 다시 표시는 안 함")
+    log("다른 nm_build 가 도는 중 — 5분 뒤 다시"); time.sleep(300)
+else:
+    sys.exit("매칭테이블을 3시간 동안 못 다시 만듦 — 상가는 들어갔음 · 상세 다시 표시는 안 함")
+from svc_publish import env, pg_conn
+pg = pg_conn(env())
+with pg.cursor() as c:
+    c.execute("CREATE TABLE IF NOT EXISTS svc.detail_dirty (complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())")
+    c.execute("""INSERT INTO svc.detail_dirty (complex_id, why) SELECT complex_id, %s FROM svc.complex_json WHERE kind = 'detail'
+                 ON CONFLICT (complex_id) DO NOTHING""", (f"상가 새 판 {base}",))
+    log(f"상세 다시 표에 적음 {c.rowcount:,} — 뒤에서 차례로 다시 발행")
+pg.commit()
+log("끝")

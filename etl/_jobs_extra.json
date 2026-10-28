@@ -2266,5 +2266,20 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\370_semas_schedule_on.sql"
+  ],
+  "cl-svc-dirty-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "dirty",
+    "--workers",
+    "4",
+    "--minutes",
+    "330"
+  ],
+  "zq-371-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\371_schedule_detail_dirty.sql"
   ]
 }

@@ -179,7 +179,7 @@ def publish_markers(ms, pg):
             c.execute("""INSERT INTO svc.detail_dirty (complex_id, why)
                          SELECT n.complex_id, '마커 실거래 칸 바뀜' FROM svc.complex_marker_new n JOIN svc.complex_marker o USING (complex_id)
                           WHERE (n.trade_cnt, n.rent_cnt, n.area_grp, n.max_amount, n.max_ymd) IS DISTINCT FROM (o.trade_cnt, o.rent_cnt, o.area_grp, o.max_amount, o.max_ymd)
-                         ON CONFLICT (complex_id) DO NOTHING""")
+                         ON CONFLICT (complex_id) DO UPDATE SET why = EXCLUDED.why, at = now()""")   # 실거래가 먼저(상가 새 판 표시보다)
             print(f"  상세 다시 표에 적음 {c.rowcount:,}(마커 실거래 칸 바뀜)", flush=True)
     pg.commit()
     import psycopg.errors   # 바꿔 끼우기는 짧게 + 잠금 3초 제한(svc_layers 와 같은 이유)
@@ -205,7 +205,7 @@ def publish_markers(ms, pg):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["full", "hourly", "ids"], default="hourly")
+    ap.add_argument("--mode", choices=["full", "hourly", "ids", "dirty"], default="hourly")
     ap.add_argument("--ids", nargs="*", type=int)
     ap.add_argument("--ids-file", default="", help="ids: 줄마다 단지 번호 하나(10-28 svc_trade_stale)")
     ap.add_argument("--workers", type=int, default=4)
@@ -257,6 +257,22 @@ def main():
         ids = list(a.ids or [])
         if a.ids_file: ids += [int(x) for x in open(a.ids_file, encoding="utf-8").read().split() if x.strip().isdigit()]
         want = [(cid, k) for cid in ids for k in (a.kinds.split(",") if a.kinds else kinds_for(info.get(cid, (0,))[0]))]
+    elif a.mode == "dirty":
+        # ★ 10-28 사장님 "너판단으로 ㄱㄱ": '상세 다시' 표를 끝까지 비운다(상가 새 판처럼 많이 쌓인 것) — 실거래 바뀜 먼저 · 그다음 세대 많은 곳.
+        #   이미 담긴 상세만(안 담긴 곳은 열릴 때 적재DB 경로가 지금 값으로 답한다). 하다 끊겨도 받은 만큼 표에서 빠져 다음에 이어 한다.
+        with pg.cursor() as c:
+            c.execute("CREATE TABLE IF NOT EXISTS svc.detail_dirty (complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())")
+            rows = c.execute("SELECT complex_id, why = '마커 실거래 칸 바뀜' FROM svc.detail_dirty").fetchall()
+        pg.commit()
+        담김 = {cid for cid, k in have if k == "detail"}
+        먼저 = {cid for cid, t in rows if t}
+        ids = sorted([cid for cid, t in rows if cid in info and cid in 담김], key=lambda x: (0 if x in 먼저 else 1, 순위(x)))
+        print(f"  상세 다시 표 {len(rows):,} · 이번에 받을 것 {len(ids):,}(실거래 먼저 {len(먼저 & set(ids)):,})", flush=True)
+        if not ids:
+            with pg.cursor() as c:
+                c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 상세 다시 표 빔' WHERE publish_id = %s", (pid,))
+            pg.commit(); sys.exit(3)
+        want = [(cid, "detail") for cid in ids]
     elif a.mode == "full":
         for cid in sorted(info, key=순위):
             if (info[cid][0] or 0) < a.min_hhld: continue
@@ -272,7 +288,7 @@ def main():
         # 10-28: '상세 다시' 표(마커 실거래 칸이 바뀐 단지) — 세대 많은 곳부터 a.dirty 개까지. 끝나면 받은 것만 지운다(아래)
         with pg.cursor() as c:
             c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
-            dirty = [r[0] for r in c.execute("SELECT complex_id FROM svc.detail_dirty").fetchall()] if c.fetchone()[0] else []
+            dirty = [r[0] for r in c.execute("SELECT complex_id FROM svc.detail_dirty WHERE why = '마커 실거래 칸 바뀜'").fetchall()] if c.fetchone()[0] else []
         pg.commit()
         dirty = sorted([cid for cid in dirty if cid in info and cid in 담김], key=순위)[: a.dirty]
         chs = set(ch); ch += [cid for cid in dirty if cid not in chs]
@@ -297,7 +313,14 @@ def main():
         c.execute("SELECT complex_id, kind, sha FROM svc.complex_json WHERE complex_id = ANY(%s)", (list({w[0] for w in want}) or [0],))
         old = {(r[0], r[1]): r[2] for r in c.fetchall()}
     pg.commit()   # 10-25: 읽기 뒤 트랜잭션을 닫는다 — 열어 둔 채 받기(수 분)를 하면 서비스DB 가 2분에 끊는다(idle_in_transaction_session_timeout)
-    new = chg = same = bad = 0; buf = []; 시간 = {}; 담은 = set()
+    new = chg = same = bad = 0; buf = []; 시간 = {}; 지울 = []
+    def 표에서빼기():   # 10-28: 다시 담은 상세는 '상세 다시' 표에서 뺀다 — 이 발행이 시작된 뒤 다시 적힌 것은 남긴다(그건 또 바뀐 것)
+        nonlocal 지울
+        if not 지울: return
+        with pg.cursor() as c:
+            c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
+            if c.fetchone()[0]: c.execute("DELETE FROM svc.detail_dirty WHERE complex_id = ANY(%s) AND at <= %s", (지울, wm))
+        pg.commit(); 지울 = []
     def flush():
         nonlocal buf
         if not buf: return
@@ -320,7 +343,7 @@ def main():
             done = next(as_completed(진행)); 진행.discard(done)
             cid, kind, st, body, dt = done.result(); n += 1
             시간.setdefault(kind, []).append(dt)
-            if st is not None: 담은.add((cid, kind))
+            if st is not None and kind == "detail": 지울.append(cid)
             if st is None:
                 bad += 1
                 if bad <= 20: print(f"  !! {cid}/{kind}: {body}", flush=True)
@@ -335,19 +358,13 @@ def main():
                     buf.append((cid, kind, st, gzip.compress(raw, 6), sha, len(raw), pid))
                     if len(buf) >= 200: flush()
             if n % 500 == 0:
+                flush(); 표에서빼기()
                 el = time.time() - t0
                 print(f"  [{time.strftime('%H:%M:%S')}] {n:,}/{len(want):,} · 새 {new:,} · 바뀜 {chg:,} · 같음 {same:,} · 실패 {bad} · {n/el:.1f}건/초", flush=True)
             if not (끝시각 and time.time() > 끝시각): 채우기()
     flush()
     st = "ok" if bad == 0 or bad < max(10, n * 0.01) else "failed"
-    # 10-28: 다시 담은 단지는 '상세 다시' 표에서 뺀다(ids 로 다시 담은 것도) — 실패한 단지는 남겨 다음 때 다시
-    done_ids = list({w[0] for w in want if (w[0], "detail") in 담은} if 담은 else set())
-    if done_ids:
-        with pg.cursor() as c:
-            c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
-            if c.fetchone()[0]:
-                c.execute("DELETE FROM svc.detail_dirty WHERE complex_id = ANY(%s)", (done_ids,)); print(f"  상세 다시 표에서 뺌 {c.rowcount:,}", flush=True)
-        pg.commit()
+    표에서빼기()
     with pg.cursor() as c:
         c.execute("""UPDATE svc.publish SET finished_at = now(), status = %s, rows_new = %s, rows_changed = %s, rows_same = %s, rows_failed = %s,
                      note = note || %s WHERE publish_id = %s""",
