@@ -76,11 +76,16 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_cat_area')
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_carea_area')
     CREATE INDEX ix_carea_area ON gold.complex_area (전용) INCLUDE (호수);
 GO
+IF OBJECT_ID('ops.ask_attr_geom_fail') IS NULL
+CREATE TABLE ops.ask_attr_geom_fail (id BIGINT IDENTITY(1,1) PRIMARY KEY, at DATETIME2(0) NOT NULL DEFAULT SYSDATETIME(),
+    what VARCHAR(10) NOT NULL, complex_id INT NULL, pnu CHAR(19) NULL, zone_key VARCHAR(40) NULL, err NVARCHAR(200) NULL);
+GO
 CREATE OR ALTER PROCEDURE gold.usp_ask_attr_build @what VARCHAR(10), @a INT, @b INT
 WITH RECOMPILE   -- 범위마다 단지 수가 달라 계획을 다시 세운다(첫 범위 계획이 굳으면 작은 범위도 60초를 넘겼다)
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET XACT_ABORT ON;   -- 10-29: 문장 오류(8115 등) 뒤에도 계속 가서 **빈 결과로 바꿔 끼우던** 것을 막는다 — 오류면 여기서 멈춘다
     SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;   -- 적재 중 표의 잠금을 기다리지 않는다(11-145)
 
     IF @what = 'area'
@@ -95,12 +100,12 @@ BEGIN
         SELECT h.complex_id, x.전용, COUNT(*)
           FROM #h h
           JOIN (SELECT a.mgm_bldrgst_pk,
-                       전용 = CAST(SUM(a.area) AS DECIMAL(9,2)),
+                       전용 = CAST(SUM(a.area) AS DECIMAL(14,2)),   /* 10-29: 전국 전유부에 합이 1천만㎡ 넘는 호가 있어 넘침(8115) */
                        주거 = MAX(CASE WHEN a.main_purps_cd IN ('02001','02002','02003','14202') THEN 1 ELSE 0 END)
                   FROM silver.bld_expos_pubuse_area a
                  WHERE a.is_current = 1 AND a.expos_pubuse_gb_cd = '1'
                  GROUP BY a.mgm_bldrgst_pk) x ON x.mgm_bldrgst_pk = h.호PK
-         WHERE x.주거 = 1 AND x.전용 > 0
+         WHERE x.주거 = 1 AND x.전용 > 0 AND x.전용 < 10000000   /* 표 칸이 DECIMAL(9,2) — 그 넘는 '주거 호' 는 요약에서 뺀다(모름 = NULL 과 같음, 원본은 그대로) */
          GROUP BY h.complex_id, x.전용
         OPTION (HASH JOIN);
         /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
@@ -193,9 +198,9 @@ BEGIN
     BEGIN
         IF OBJECT_ID('tempdb..#rr') IS NOT NULL DROP TABLE #rr;
         SELECT TOP 0 complex_id, present_sn, xarea, parea INTO #rr FROM gold.complex_redev_hit;
-        INSERT INTO #rr (complex_id, present_sn, xarea, parea)
-        SELECT cp.complex_id, r.present_sn,
-               SUM(p.geom.MakeValid().STIntersection(r.geom.MakeValid()).STArea())   /* 10-29: 전국 필지에서 STIntersection E_FAIL(6522) — MakeValid */, SUM(p.geom.STArea())
+        IF OBJECT_ID('tempdb..#pr') IS NOT NULL DROP TABLE #pr;
+        SELECT n = ROW_NUMBER() OVER (ORDER BY cp.complex_id, r.redev_sk, p.pnu), cp.complex_id, r.present_sn, r.redev_sk, p.pnu, pg = p.geom, zg = r.geom
+          INTO #pr
           FROM gold.complex_pnu cp
           JOIN silver.cadastral_parcel p
             ON p.pnu = cp.pnu AND p.is_current = 1 AND p.geom IS NOT NULL
@@ -204,8 +209,32 @@ BEGIN
            AND r.bbox_minx <= p.bbox_maxx AND r.bbox_maxx >= p.bbox_minx
            AND r.bbox_miny <= p.bbox_maxy AND r.bbox_maxy >= p.bbox_miny
            AND r.geom.STIntersects(p.geom) = 1
-         WHERE cp.complex_id BETWEEN @a AND @b
-         GROUP BY cp.complex_id, r.present_sn;
+         WHERE cp.complex_id BETWEEN @a AND @b;
+        BEGIN TRY
+            INSERT INTO #rr (complex_id, present_sn, xarea, parea)
+            SELECT complex_id, present_sn, SUM(pg.MakeValid().STIntersection(zg.MakeValid()).STArea()), SUM(pg.STArea())
+              FROM #pr GROUP BY complex_id, present_sn;
+        END TRY
+        BEGIN CATCH
+            /* 10-29: 전국 필지 · 구역 도형 중 STIntersection 이 E_FAIL(6522) 을 내는 짝이 있다(MakeValid 로도) — 짝마다 다시 하고 그 짝만 뺀다 */
+            TRUNCATE TABLE #rr;
+            IF OBJECT_ID('tempdb..#pra') IS NOT NULL DROP TABLE #pra;
+            CREATE TABLE #pra (complex_id INT, present_sn VARCHAR(40), xa FLOAT, pa FLOAT);
+            DECLARE @i INT = 1, @n INT = (SELECT COUNT(*) FROM #pr), @xa FLOAT;
+            WHILE @i <= @n
+            BEGIN
+                BEGIN TRY
+                    SELECT @xa = pg.MakeValid().STIntersection(zg.MakeValid()).STArea() FROM #pr WHERE n = @i;
+                    INSERT INTO #pra SELECT complex_id, present_sn, @xa, pg.STArea() FROM #pr WHERE n = @i;
+                END TRY
+                BEGIN CATCH
+                    INSERT INTO ops.ask_attr_geom_fail (what, complex_id, pnu, zone_key, err)
+                    SELECT 'redev', complex_id, pnu, CAST(redev_sk AS VARCHAR(40)), LEFT(ERROR_MESSAGE(), 200) FROM #pr WHERE n = @i;
+                END CATCH
+                SET @i += 1;
+            END
+            INSERT INTO #rr (complex_id, present_sn, xarea, parea) SELECT complex_id, present_sn, SUM(xa), SUM(pa) FROM #pra GROUP BY complex_id, present_sn;
+        END CATCH
         /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
         BEGIN TRAN;
             DELETE FROM gold.complex_redev_hit WHERE complex_id BETWEEN @a AND @b;
@@ -217,8 +246,9 @@ BEGIN
     BEGIN
         IF OBJECT_ID('tempdb..#rz') IS NOT NULL DROP TABLE #rz;
         SELECT TOP 0 complex_id, uname, xarea INTO #rz FROM gold.complex_zone_hit;
-        INSERT INTO #rz (complex_id, uname, xarea)
-        SELECT cp.complex_id, z.uname, SUM(p.geom.MakeValid().STIntersection(z.geom.MakeValid()).STArea())   /* 10-29: 같은 까닭 */
+        IF OBJECT_ID('tempdb..#pz') IS NOT NULL DROP TABLE #pz;
+        SELECT n = ROW_NUMBER() OVER (ORDER BY cp.complex_id, z.zone_sk, p.pnu), cp.complex_id, z.uname, z.zone_sk, p.pnu, pg = p.geom, zg = z.geom
+          INTO #pz
           FROM gold.complex_pnu cp
           JOIN silver.cadastral_parcel p
             ON p.pnu = cp.pnu AND p.is_current = 1 AND p.geom IS NOT NULL
@@ -228,8 +258,30 @@ BEGIN
            AND z.bbox_minx <= p.bbox_maxx AND z.bbox_maxx >= p.bbox_minx
            AND z.bbox_miny <= p.bbox_maxy AND z.bbox_maxy >= p.bbox_miny
            AND z.geom.STIntersects(p.geom) = 1
-         WHERE cp.complex_id BETWEEN @a AND @b
-         GROUP BY cp.complex_id, z.uname;
+         WHERE cp.complex_id BETWEEN @a AND @b;
+        BEGIN TRY
+            INSERT INTO #rz (complex_id, uname, xarea)
+            SELECT complex_id, uname, SUM(pg.MakeValid().STIntersection(zg.MakeValid()).STArea()) FROM #pz GROUP BY complex_id, uname;
+        END TRY
+        BEGIN CATCH
+            TRUNCATE TABLE #rz;     /* redev 와 같은 까닭 — 짝마다 다시, 실패 짝만 빼고 ops.ask_attr_geom_fail 에 */
+            IF OBJECT_ID('tempdb..#pza') IS NOT NULL DROP TABLE #pza;
+            CREATE TABLE #pza (complex_id INT, uname NVARCHAR(100), xa FLOAT);
+            DECLARE @j INT = 1, @m INT = (SELECT COUNT(*) FROM #pz), @za FLOAT;
+            WHILE @j <= @m
+            BEGIN
+                BEGIN TRY
+                    SELECT @za = pg.MakeValid().STIntersection(zg.MakeValid()).STArea() FROM #pz WHERE n = @j;
+                    INSERT INTO #pza SELECT complex_id, uname, @za FROM #pz WHERE n = @j;
+                END TRY
+                BEGIN CATCH
+                    INSERT INTO ops.ask_attr_geom_fail (what, complex_id, pnu, zone_key, err)
+                    SELECT 'zone', complex_id, pnu, CAST(zone_sk AS VARCHAR(40)), LEFT(ERROR_MESSAGE(), 200) FROM #pz WHERE n = @j;
+                END CATCH
+                SET @j += 1;
+            END
+            INSERT INTO #rz (complex_id, uname, xarea) SELECT complex_id, uname, SUM(xa) FROM #pza GROUP BY complex_id, uname;
+        END CATCH
         /* 다 센 뒤에 짧게 바꿔 끼운다 — 세는 동안 이 범위가 비어 AI 검색이 덜 찾는 일이 없게 */
         BEGIN TRAN;
             DELETE FROM gold.complex_zone_hit WHERE complex_id BETWEEN @a AND @b;

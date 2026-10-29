@@ -2273,7 +2273,7 @@
     "--mode",
     "dirty",
     "--workers",
-    "4",
+    "8",
     "--minutes",
     "330"
   ],
@@ -3750,5 +3750,11 @@
   "cl-applyhome-par": [
     "python",
     "applyhome_cron.py"
+  ],
+  "zs-dirtyall-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\012_dirty_all_1029.sql",
+    "SELECT why, COUNT(*) FROM svc.detail_dirty GROUP BY why"
   ]
 }

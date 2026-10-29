@@ -262,6 +262,10 @@ def main():
         #   이미 담긴 상세만(안 담긴 곳은 열릴 때 적재DB 경로가 지금 값으로 답한다). 하다 끊겨도 받은 만큼 표에서 빠져 다음에 이어 한다.
         with pg.cursor() as c:
             c.execute("CREATE TABLE IF NOT EXISTS svc.detail_dirty (complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())")
+            # ★ 10-29: 적힌 뒤에 이미 다시 담긴 상세(매시 발행이 같은 단지를 먼저 담은 것)는 받지 않고 표에서만 뺀다 — 같은 상세를 두 번 받지 않게
+            c.execute("""DELETE FROM svc.detail_dirty d USING svc.complex_json j
+                          WHERE j.complex_id = d.complex_id AND j.kind = 'detail' AND j.updated_at > d.at""")
+            print(f"  상세 다시 표 — 적힌 뒤 이미 다시 담긴 {c.rowcount:,}곳은 뺌", flush=True)
             rows = c.execute("SELECT complex_id, why = '마커 실거래 칸 바뀜' FROM svc.detail_dirty").fetchall()
         pg.commit()
         담김 = {cid for cid, k in have if k == "detail"}
