@@ -3756,5 +3756,41 @@
     "svc_sql.py",
     "..\\deploy\\svc\\pg\\012_dirty_all_1029.sql",
     "SELECT why, COUNT(*) FROM svc.detail_dirty GROUP BY why"
+  ],
+  "zp-dockinsp-par": [
+    "docker",
+    "inspect",
+    "-f",
+    "{{index .Config.Labels \"com.docker.compose.project\"}} | {{index .Config.Labels \"com.docker.compose.project.working_dir\"}} | {{json .HostConfig.PortBindings}} | {{range .Mounts}}{{.Name}},{{end}} | {{.State.Status}}",
+    "teomoony-mssql"
+  ],
+  "zp-mssql-local-par": [
+    "docker",
+    "compose",
+    "-p",
+    "deploy",
+    "--env-file",
+    "..\\.env",
+    "-f",
+    "..\\deploy\\docker-compose.yml",
+    "up",
+    "-d",
+    "--no-deps",
+    "mssql"
+  ],
+  "zp-mssql-start-par": [
+    "docker",
+    "start",
+    "teomoony-mssql"
+  ],
+  "zp-port-who-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "Get-NetTCPConnection -LocalPort 11433 -ErrorAction SilentlyContinue | Select-Object LocalAddress,State,OwningProcess,@{n='proc';e={(Get-Process -Id $_.OwningProcess).ProcessName}} | Format-Table -AutoSize | Out-String -Width 200"
+  ],
+  "zp-lan-par": [
+    "python",
+    "_p_lan.py"
   ]
 }

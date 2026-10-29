@@ -41,7 +41,8 @@ services:
       #   적재 9.5GB(버퍼 8GB) · CPU 9 / 서비스 3GB · CPU 3 까지 / Redis 1GB.
       MSSQL_MEMORY_LIMIT_MB: "8192"
     ports:
-      - "11433:1433"
+      # 2026-10-29 사장님 "ㄱㄱ"(보안): 이 PC 안에서만(전에는 모든 네트워크 — 같은 와이파이 기기가 sa 로 붙어 볼 수 있었다)
+      - "127.0.0.1:11433:1433"
     volumes:
       - mssql_data:/var/opt/mssql/data
       - mssql_log:/var/opt/mssql/log
