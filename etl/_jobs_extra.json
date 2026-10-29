@@ -3792,5 +3792,23 @@
   "zp-lan-par": [
     "python",
     "_p_lan.py"
+  ],
+  "zs-stalekinds-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\013_stale_kinds_1029.sql",
+    "SELECT kind, count(*) FROM svc.complex_json WHERE kind IN ('childcare','landuse','landuse-shape','closed','history') GROUP BY kind"
+  ],
+  "zs-kinds-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "full",
+    "--kinds",
+    "childcare,landuse,landuse-shape,closed,history",
+    "--min-hhld",
+    "20",
+    "--workers",
+    "4"
   ]
 }
