@@ -7,11 +7,15 @@
    ★ 이미 넣은 달은 건너뛴다(load_hub) — 매달 hub_month.py 가 끝에 부른다."""
 import subprocess, sys
 PY = sys.executable
-for step in ([PY, "hub_bulk.py", "--cat", "주택인허가", "--only", "기본개요", "동별개요", "대지위치", "--workers", "3"],
-             [PY, "load_hub.py", "--all", "--cat", "주택인허가", "--only", "기본개요", "동별개요", "대지위치"]):
+# 10-30 사장님 "123 ㄱㄱ"(승인 단지 상세): 행위개요(총사업비 · 단지명) · 관리공동형별개요(사업주체 · 전용면적별 세대) · 호별개요(평형) · 주차장 · 부대시설 · 복리분양시설
+이름들 = ["기본개요", "동별개요", "대지위치", "행위개요", "관리공동형별개요", "호별개요", "주차장", "부대시설", "복리분양시설"]
+for step in ([PY, "hub_bulk.py", "--cat", "주택인허가", "--only", *이름들, "--workers", "3"],
+             [PY, "load_hub.py", "--all", "--cat", "주택인허가", "--only", *이름들]):
     print("▶", " ".join(step[1:]), flush=True)
     r = subprocess.run(step)
     if r.returncode: print("✖ 멈춤", r.returncode, flush=True); sys.exit(r.returncode)
+# 상세용 색인(385 — 없을 때만 만든다)
+subprocess.run([PY, "ms_q.py", r"..\deploy\sql\385_hub_house_idx.sql"])
 # 지도 '승인' 핀 표(gold.house_plan, deploy/sql/384) 다시 — 파생표
 from svc_publish import env, ms_conn
 cur = ms_conn(env()).cursor(); cur.execute("EXEC gold.usp_refresh_house_plan"); print("house_plan:", cur.fetchall(), flush=True)
