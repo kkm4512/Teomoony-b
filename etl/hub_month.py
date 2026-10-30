@@ -121,5 +121,8 @@ if step == "실거래":
 if step == "서비스":
     r = subprocess.run([py, "merge_frag_cron.py"], cwd=HERE)
     if r.returncode not in (0, 3): sys.exit(f"✘ 단지 조각 묶기 실패(종료코드 {r.returncode})")
+    # 10-30: 주택인허가(사업계획승인) 새 달 → 지도 '승인' 핀(gold.house_plan). 실패해도 대장 갱신은 끝난 것 — 기록만 남긴다
+    r = subprocess.run([py, "house_permit_load.py"], cwd=HERE)
+    if r.returncode: log(f"! 주택인허가 갱신 실패(종료코드 {r.returncode}) — 다음 달에 다시")
     st_put(M, "끝")
 log(f"끝 — {M}")

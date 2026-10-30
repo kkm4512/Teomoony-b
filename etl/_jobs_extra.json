@@ -3810,5 +3810,9 @@
     "20",
     "--workers",
     "4"
+  ],
+  "zh-housepms-par": [
+    "python",
+    "house_permit_load.py"
   ]
 }
