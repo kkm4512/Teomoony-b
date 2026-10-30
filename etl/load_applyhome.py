@@ -213,6 +213,11 @@ def main():
     cur.execute("EXEC gold.usp_refresh_applyhome_link")
     r = cur.fetchone(); conn.commit()
     if r: print(f"연결: 공고 {r[0]} · 법정동 {r[1]} · 필지 {r[2]} · 이음 {r[3]} (단지에 {r[4]} · 대장 없는 신축에 {r[5]})")
+    # 10-30 389: 청약 공고 가단지(종류 a)와 공고 → 가단지(gold.pre_applyhome)를 새 공고 · 연결에 맞춘다
+    cur.execute("IF OBJECT_ID('gold.usp_refresh_pre_complex') IS NOT NULL EXEC gold.usp_refresh_pre_complex")
+    try: print("가단지:", cur.fetchall(), flush=True)
+    except Exception: pass
+    conn.commit()
     conn.close()
 
 
