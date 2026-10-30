@@ -107,6 +107,9 @@ def 따라가기():
             m = re.search(r"끝 (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+종료코드 (-?\d+)", txt)
             if m and not os.path.exists(os.path.join(Q, job + ".job")):
                 rc = int(m.group(2)); 끝 = D.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+                # 10-31: 창을 닫아 강제 종료된 작업의 종료코드는 3221225786(0xC000013A) — ops.collect_run.종료코드(INT)를 넘어 UPDATE 가 넘침 오류를 내고
+                #   그 뒤 바퀴가 통째로 실패했다(10-30 20:29 ~ 10-31 07:50). 같은 32비트 값을 부호 있는 수로 적는다(-1073741510).
+                if rc > 2147483647: rc -= 4294967296
                 st = "성공" if rc == 0 else "건너뜀" if rc == 3 else "실패"
                 이유 = None
                 if rc != 0:
