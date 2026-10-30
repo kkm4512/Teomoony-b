@@ -271,11 +271,20 @@ def main():
         담김 = {cid for cid, k in have if k == "detail"}
         먼저 = {cid for cid, t in rows if t}
         ids = sorted([cid for cid, t in rows if cid in info and cid in 담김], key=lambda x: (0 if x in 먼저 else 1, 순위(x)))
+        # ★ 10-30: 받을 수 없는 줄은 표에서 뺀다 — 서비스DB 에 상세가 안 담긴 단지(열면 적재DB 경로가 지금 값으로 답한다) ·
+        #   단지 목록에 없는 단지(묶이거나 빠짐). 안 빼면 표에 영영 남아 매번 '받을 것 0' 으로 끝났다(10-30 18:50 1,916곳).
+        못받음 = [cid for cid, t in rows if not (cid in info and cid in 담김)]
+        if 못받음:
+            with pg.cursor() as c:
+                c.execute("DELETE FROM svc.detail_dirty WHERE complex_id = ANY(%s)", (못받음,))
+            pg.commit()
+            print(f"  상세 다시 표 — 받을 수 없는 {len(못받음):,}곳은 뺌(안 담긴 상세 · 목록에 없는 단지)", flush=True)
         print(f"  상세 다시 표 {len(rows):,} · 이번에 받을 것 {len(ids):,}(실거래 먼저 {len(먼저 & set(ids)):,})", flush=True)
         if not ids:
             with pg.cursor() as c:
                 c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 상세 다시 표 빔' WHERE publish_id = %s", (pid,))
-            pg.commit(); sys.exit(3)
+            # ★ 10-30: 비울 것이 없는 건 정상 — 0 으로 끝낸다(3 이면 작업 감시기가 '적재 실패' 알림을 보냈다 · 10-30 18:50)
+            pg.commit(); print("  할 일 없음 — 상세 다시 표가 비었습니다", flush=True); sys.exit(0)
         want = [(cid, "detail") for cid in ids]
     elif a.mode == "full":
         for cid in sorted(info, key=순위):

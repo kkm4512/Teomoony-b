@@ -111,7 +111,7 @@ def get(url, key, params, retries=4):
                     # ★ 하루 호출 한도를 넘으면 계속 두드려도 다 실패다 — 받은 데까지 두고 **멈춘다**(다음 날 같은 명령이 빈 것만 채운다)
                     if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in json.dumps(j) or '"22"' in json.dumps(j):
                         print("\n★ data.go.kr 하루 호출 한도 초과 — 여기서 멈춥니다(받은 것은 그대로)", flush=True)
-                        os._exit(3)
+                        os._exit(4)   # 10-30: 3 은 '건너뜀(할 일 없음)' 약속이라 알림이 안 간다 — 한도 초과는 알려야 하므로 4
                     조절.실패()          # HTTP_ERROR(04) — K-apt 쪽이 버거워한다. 다 같이 쉰다
                     time.sleep(1.5 * (a + 1))
                     continue
