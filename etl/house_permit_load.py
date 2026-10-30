@@ -19,4 +19,6 @@ subprocess.run([PY, "ms_q.py", r"..\deploy\sql\385_hub_house_idx.sql"])
 # 지도 '승인' 핀 표(gold.house_plan, deploy/sql/384) 다시 — 파생표
 from svc_publish import env, ms_conn
 cur = ms_conn(env()).cursor(); cur.execute("EXEC gold.usp_refresh_house_plan"); print("house_plan:", cur.fetchall(), flush=True)
+# 10-30 가단지 번호(389) — 승인 아파트가 바뀌었으니
+cur.execute("IF OBJECT_ID('gold.usp_refresh_pre_complex') IS NOT NULL EXEC gold.usp_refresh_pre_complex"); print("pre_complex:", cur.fetchall(), flush=True)
 print("✔ 끝", flush=True)

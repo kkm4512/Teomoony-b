@@ -21,4 +21,6 @@ for step in steps:
     if r.returncode: print("✖ 멈춤", r.returncode, flush=True); sys.exit(r.returncode)
 from svc_publish import env, ms_conn
 cur = ms_conn(env()).cursor(); cur.execute("EXEC gold.usp_refresh_pms_extra"); print("pms_extra:", cur.fetchall(), flush=True)
+# 10-30 "가단지코드" ㄱㄱ: 공사 중 건물이 바뀌었으니 가단지 번호(389) — 새로 · 이동(대장 단지 생김) · 없어짐
+cur.execute("IF OBJECT_ID('gold.usp_refresh_pre_complex') IS NOT NULL EXEC gold.usp_refresh_pre_complex"); print("pre_complex:", cur.fetchall(), flush=True)
 print("✔ 끝", flush=True)

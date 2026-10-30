@@ -20,15 +20,16 @@ BEGIN
   SET @n = (LEN(@body) - LEN(REPLACE(@body, 'FROM gold.complex c', ''))) / LEN('FROM gold.complex c');
   IF @n <> 1 BEGIN CLOSE k; DEALLOCATE k; RAISERROR('%s: FROM gold.complex c 가 %d 번 — 모양이 바뀌었다, 손으로 본다', 16, 1, @v, @n); RETURN; END;
   SET @body = REPLACE(@body, 'FROM gold.complex c',
-      'FROM (SELECT complex_id = 0, centroid_lat = @lat, centroid_lng = @lng, is_active = CAST(1 AS BIT)) c');
-  EXEC (N'CREATE OR ALTER FUNCTION ' + @f + N' (@lat FLOAT, @lng FLOAT) RETURNS TABLE AS RETURN ' + @body);
+      'FROM (SELECT complex_id = @cid, centroid_lat = @lat, centroid_lng = @lng, is_active = CAST(1 AS BIT)) c');
+  /* @cid = 이 점에 붙일 단지 번호(가단지 389 · 한 점 주변은 0) — 단지 질의의 'complex_id = @id' 가 그대로 맞게 */
+  EXEC (N'CREATE OR ALTER FUNCTION ' + @f + N' (@lat FLOAT, @lng FLOAT, @cid INT) RETURNS TABLE AS RETURN ' + @body);
   FETCH NEXT FROM k INTO @v, @f;
 END
 CLOSE k; DEALLOCATE k;
 GO
 /* 유치원 — gold.v_complex_kinder 와 같은 식(반경 500m) */
-CREATE OR ALTER FUNCTION gold.fn_pt_kinder (@lat FLOAT, @lng FLOAT) RETURNS TABLE AS RETURN
-SELECT complex_id = 0,
+CREATE OR ALTER FUNCTION gold.fn_pt_kinder (@lat FLOAT, @lng FLOAT, @cid INT) RETURNS TABLE AS RETURN
+SELECT complex_id = @cid,
        k.kinder_cd, k.kinder_nm, k.establish, k.addr, k.tel_no, k.oper_time,
        k.cap_cnt, k.pupil_cnt, k.class_cnt, k.pbnt_tmng,
        k.lat, lon = k.lng,
@@ -37,13 +38,21 @@ SELECT complex_id = 0,
  WHERE k.geog IS NOT NULL
    AND geography::Point(@lat, @lng, 4326).STDistance(k.geog) <= 500;
 GO
+/* 어린이집 — gold.v_complex_childcare(303) 와 같은 식(반경 500m) */
+CREATE OR ALTER FUNCTION gold.fn_pt_childcare (@lat FLOAT, @lng FLOAT, @cid INT) RETURNS TABLE AS RETURN
+SELECT complex_id = @cid, k.stcode, cr_nm = k.이름, cr_type = k.유형, k.상태, k.정원, k.현원, k.반수, k.교직원수, k.통학차량,
+       k.제공서비스, k.기준일, k.lat, lon = k.lng, dist_m = geography::Point(@lat, @lng, 4326).STDistance(k.geog)
+  FROM silver.childcare k
+ WHERE k.is_current = 1 AND k.geog IS NOT NULL AND geography::Point(@lat, @lng, 4326).STDistance(k.geog) <= 500;
+GO
 SELECT 만든것 = (SELECT STRING_AGG(name, ', ') FROM sys.objects WHERE schema_id = SCHEMA_ID('gold') AND name LIKE 'fn_pt_%'),
-       시험_상권 = (SELECT COUNT(*) FROM gold.fn_pt_poi(37.4739, 127.1313)),
-       시험_학교 = (SELECT COUNT(*) FROM gold.fn_pt_school(37.4739, 127.1313)),
-       시험_역 = (SELECT COUNT(*) FROM gold.fn_pt_subway(37.4739, 127.1313)),
-       시험_버스 = (SELECT COUNT(*) FROM gold.fn_pt_bus(37.4739, 127.1313)),
-       시험_학원 = (SELECT COUNT(*) FROM gold.fn_pt_academy(37.4739, 127.1313)),
-       시험_유치원 = (SELECT COUNT(*) FROM gold.fn_pt_kinder(37.4739, 127.1313));
+       시험_어린이집 = (SELECT COUNT(*) FROM gold.fn_pt_childcare(37.4739, 127.1313, 0)),
+       시험_상권 = (SELECT COUNT(*) FROM gold.fn_pt_poi(37.4739, 127.1313, 0)),
+       시험_학교 = (SELECT COUNT(*) FROM gold.fn_pt_school(37.4739, 127.1313, 0)),
+       시험_역 = (SELECT COUNT(*) FROM gold.fn_pt_subway(37.4739, 127.1313, 0)),
+       시험_버스 = (SELECT COUNT(*) FROM gold.fn_pt_bus(37.4739, 127.1313, 0)),
+       시험_학원 = (SELECT COUNT(*) FROM gold.fn_pt_academy(37.4739, 127.1313, 0)),
+       시험_유치원 = (SELECT COUNT(*) FROM gold.fn_pt_kinder(37.4739, 127.1313, 0));
 /* 필지 하나(PNU)의 용도지역 · 정비구역 — gold.v_complex_zone · v_complex_redev 와 같은 식(정의에서 'FROM gold.complex_pnu cp' 만 한 필지로) */
 DECLARE @v SYSNAME, @f SYSNAME, @d NVARCHAR(MAX), @i INT, @body NVARCHAR(MAX), @n INT;
 DECLARE k CURSOR LOCAL FAST_FORWARD FOR
@@ -56,12 +65,12 @@ BEGIN
   SET @body = SUBSTRING(@d, CHARINDEX('SELECT', @d, @i), LEN(@d));
   SET @n = (LEN(@body) - LEN(REPLACE(@body, 'FROM gold.complex_pnu cp', ''))) / LEN('FROM gold.complex_pnu cp');
   IF @n <> 1 BEGIN CLOSE k; DEALLOCATE k; RAISERROR('%s: FROM gold.complex_pnu cp 가 %d 번 — 모양이 바뀌었다, 손으로 본다', 16, 1, @v, @n); RETURN; END;
-  SET @body = REPLACE(@body, 'FROM gold.complex_pnu cp', 'FROM (SELECT complex_id = 0, pnu = @pnu) cp');
-  EXEC (N'CREATE OR ALTER FUNCTION ' + @f + N' (@pnu CHAR(19)) RETURNS TABLE AS RETURN ' + @body);
+  SET @body = REPLACE(@body, 'FROM gold.complex_pnu cp', 'FROM (SELECT complex_id = @cid, pnu = @pnu) cp');
+  EXEC (N'CREATE OR ALTER FUNCTION ' + @f + N' (@pnu CHAR(19), @cid INT) RETURNS TABLE AS RETURN ' + @body);
   FETCH NEXT FROM k INTO @v, @f;
 END
 CLOSE k; DEALLOCATE k;
 GO
 SELECT 필지함수 = (SELECT STRING_AGG(name, ', ') FROM sys.objects WHERE schema_id = SCHEMA_ID('gold') AND name LIKE 'fn_pnu_%'),
-       시험_용도 = (SELECT COUNT(*) FROM gold.fn_pnu_zone('1171010900109090000')),
-       시험_정비 = (SELECT COUNT(*) FROM gold.fn_pnu_redev('2617010100106590000'));
+       시험_용도 = (SELECT COUNT(*) FROM gold.fn_pnu_zone('1171010900109090000', 0)),
+       시험_정비 = (SELECT COUNT(*) FROM gold.fn_pnu_redev('2617010100106590000', 0));
