@@ -44,3 +44,24 @@ SELECT 만든것 = (SELECT STRING_AGG(name, ', ') FROM sys.objects WHERE schema_
        시험_버스 = (SELECT COUNT(*) FROM gold.fn_pt_bus(37.4739, 127.1313)),
        시험_학원 = (SELECT COUNT(*) FROM gold.fn_pt_academy(37.4739, 127.1313)),
        시험_유치원 = (SELECT COUNT(*) FROM gold.fn_pt_kinder(37.4739, 127.1313));
+/* 필지 하나(PNU)의 용도지역 · 정비구역 — gold.v_complex_zone · v_complex_redev 와 같은 식(정의에서 'FROM gold.complex_pnu cp' 만 한 필지로) */
+DECLARE @v SYSNAME, @f SYSNAME, @d NVARCHAR(MAX), @i INT, @body NVARCHAR(MAX), @n INT;
+DECLARE k CURSOR LOCAL FAST_FORWARD FOR
+  SELECT v, f FROM (VALUES ('gold.v_complex_zone', 'gold.fn_pnu_zone'), ('gold.v_complex_redev', 'gold.fn_pnu_redev')) x(v, f);
+OPEN k; FETCH NEXT FROM k INTO @v, @f;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+  SET @d = OBJECT_DEFINITION(OBJECT_ID(@v));
+  SET @i = CHARINDEX('VIEW', @d, CHARINDEX('CREATE', @d));
+  SET @body = SUBSTRING(@d, CHARINDEX('SELECT', @d, @i), LEN(@d));
+  SET @n = (LEN(@body) - LEN(REPLACE(@body, 'FROM gold.complex_pnu cp', ''))) / LEN('FROM gold.complex_pnu cp');
+  IF @n <> 1 BEGIN CLOSE k; DEALLOCATE k; RAISERROR('%s: FROM gold.complex_pnu cp 가 %d 번 — 모양이 바뀌었다, 손으로 본다', 16, 1, @v, @n); RETURN; END;
+  SET @body = REPLACE(@body, 'FROM gold.complex_pnu cp', 'FROM (SELECT complex_id = 0, pnu = @pnu) cp');
+  EXEC (N'CREATE OR ALTER FUNCTION ' + @f + N' (@pnu CHAR(19)) RETURNS TABLE AS RETURN ' + @body);
+  FETCH NEXT FROM k INTO @v, @f;
+END
+CLOSE k; DEALLOCATE k;
+GO
+SELECT 필지함수 = (SELECT STRING_AGG(name, ', ') FROM sys.objects WHERE schema_id = SCHEMA_ID('gold') AND name LIKE 'fn_pnu_%'),
+       시험_용도 = (SELECT COUNT(*) FROM gold.fn_pnu_zone('1171010900109090000')),
+       시험_정비 = (SELECT COUNT(*) FROM gold.fn_pnu_redev('2617010100106590000'));
