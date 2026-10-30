@@ -13,6 +13,8 @@ if "--skip-fetch" not in sys.argv:
     steps += [[PY, "hub_bulk.py", "--cat", "건축인허가", "--only", *이름들, "--workers", "3"],
               [PY, "load_hub.py", "--all", "--cat", "건축인허가", "--only", *이름들]]
 steps += [[PY, "ms_q.py", r"..\deploy\sql\386_pms_extra.sql"]]
+# 10-30 "ㄱㄱ": 공사 중 건물(387 gold.pre_build — 착공 · 사용승인 전 · 대장 없음) — 이번 달 인허가 · 대장으로 다시
+steps += [[PY, "ms_q.py", r"..\deploy\sql\387_pre_build.sql"]]
 for step in steps:
     print("▶", " ".join(step[1:]), flush=True)
     r = subprocess.run(step)

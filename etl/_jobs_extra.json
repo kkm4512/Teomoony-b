@@ -3819,5 +3819,17 @@
     "python",
     "pms_extra_load.py",
     "--skip-fetch"
+  ],
+  "zp-mkchk-par": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\_p_mk.sql",
+    "SELECT count(*) 전체, count(*) FILTER (WHERE max_amount IS NOT NULL) 가격, count(*) FILTER (WHERE coalesce(trade_cnt,0)>0 AND max_amount IS NULL) 매매수있는데가격없음, count(*) FILTER (WHERE max_amount IS NOT NULL AND max_ymd < to_char(now() - interval '3 years','YYYYMMDD')) 삼년밖, count(*) FILTER (WHERE coalesce(trade_cnt,0)=0 AND coalesce(rent_cnt,0)>0) 전월세만 FROM svc.complex_marker",
+    "SELECT relname, last_analyze, last_autoanalyze, n_live_tup FROM pg_stat_user_tables WHERE relname='complex_marker'"
+  ],
+  "zx-prebuild-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\387_pre_build.sql"
   ]
 }
