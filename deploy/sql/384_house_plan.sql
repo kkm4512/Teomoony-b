@@ -37,7 +37,7 @@ BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
     IF OBJECT_ID('tempdb..#b') IS NOT NULL DROP TABLE #b;
-    SELECT hp_pk = h.관리_주택대장_PK, 이름 = NULLIF(LTRIM(RTRIM(h.건물_명)), ''), 대지위치 = h.대지_위치,
+    SELECT hp_pk = h.관리_주택대장_PK, 이름 = gold.fn_name_mask(NULLIF(LTRIM(RTRIM(h.건물_명)), ''))  /* 390: 끝 괄호의 사람 이름은 가린다 */, 대지위치 = h.대지_위치,
            pnu0 = CASE WHEN ISNULL(h.대지_구분_코드, '0') IN ('0', '1') AND TRY_CAST(h.번 AS INT) > 0 AND LEN(h.시군구_코드) = 5 AND LEN(h.법정동_코드) = 5
                        THEN CAST(h.시군구_코드 + h.법정동_코드 + CASE WHEN h.대지_구분_코드 = '1' THEN '2' ELSE '1' END
                                  + RIGHT('0000' + CAST(TRY_CAST(h.번 AS INT) AS VARCHAR(4)), 4)

@@ -2,14 +2,19 @@
 # -*- coding: utf-8 -*-
 """svc_dirty_sql - 적재DB 질의가 낸 단지 번호를 서비스DB '상세 다시' 표(svc.detail_dirty)에 적는다 (2026-10-28)
   py svc_dirty_sql.py "SELECT complex_id FROM gold.kapt_pnu_link" "K-apt 넷째 길 377"
+  py svc_dirty_sql.py ..\\deploy\\sql\\_mask_ids.sql "이름 가림 390" json   ← 질의를 파일로 · json = 미리 만든 상세(svc.complex_json)도 지운다(10-30)
   ★ 값은 안 고친다 — 다음 발행이 지금 서버 응답으로 다시 담는다. 실거래 바뀜 표시('마커 실거래 칸 바뀜')는 덮지 않는다."""
 import sys
 from svc_publish import env, ms_conn, pg_conn
 q, why = sys.argv[1], sys.argv[2]
+json도 = len(sys.argv) > 3 and sys.argv[3] == 'json'   # 옛 이름이 담긴 상세를 다음 발행까지 기다리지 않고 바로 내린다 — 첫 열람은 적재DB 경로(조금 느림)
+if q.lower().endswith('.sql'): q = open(q, encoding='utf-8').read()
 e = env(); cur = ms_conn(e).cursor(); cur.execute(q); ids = sorted({r[0] for r in cur.fetchall() if r[0]})
 pg = pg_conn(e)
 with pg.cursor() as c:
     c.execute("CREATE TABLE IF NOT EXISTS svc.detail_dirty (complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())")
     c.execute("INSERT INTO svc.detail_dirty (complex_id, why) SELECT x, %s FROM unnest(%s::int[]) x ON CONFLICT (complex_id) DO NOTHING", (why, ids or [0])); n = c.rowcount
     c.execute("DELETE FROM svc.resp_cache WHERE complex_id = ANY(%s)", (ids or [0],))
-pg.commit(); print(f"{why}: 단지 {len(ids):,} · 상세 다시 표에 새로 {n:,}")
+    j = 0
+    if json도: c.execute("DELETE FROM svc.complex_json WHERE complex_id = ANY(%s)", (ids or [0],)); j = c.rowcount
+pg.commit(); print(f"{why}: 단지 {len(ids):,} · 상세 다시 표에 새로 {n:,}" + (f" · 미리 만든 상세 지움 {j:,}" if json도 else ""))

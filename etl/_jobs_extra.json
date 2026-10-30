@@ -3831,5 +3831,24 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\387_pre_build.sql"
+  ],
+  "zs-mask-par": [
+    "python",
+    "svc_dirty_sql.py",
+    "..\\deploy\\sql\\_mask_ids.sql",
+    "이름 가림 390",
+    "json"
+  ],
+  "zs-refill-par": [
+    "python",
+    "svc_publish.py",
+    "--mode",
+    "full",
+    "--workers",
+    "8",
+    "--limit",
+    "250000",
+    "--minutes",
+    "150"
   ]
 }

@@ -6,7 +6,7 @@
      · 주용도 공동주택 이거나, 업무시설인데 층별개요 주용도(소분류)에 '오피스텔' 이 있는 것 · 세대 + 호 10 이상
      · 같은 필지에 여럿이면 허가일이 가장 늦은 한 건(설계변경으로 쌓인 옛 허가가 핀으로 겹치지 않게)
      · 좌표 = 그 필지(지금 지적도) 중심. 필지가 없으면 좌표 NULL(목록 · 검색에만)
-   ★ 이름은 원문(건물_명) 그대로. 대장 단지와 이름으로 잇지 않는다.
+   ★ 이름은 원문(건물_명) — 끝 괄호의 사람 이름만 가린다(390). 대장 단지와 이름으로 잇지 않는다.
    ★ 2019~2021 착공인데 승인 기록이 없는 건(22,617)은 공사 중이라 단정할 수 없어 넣지 않는다. */
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -39,7 +39,7 @@ BEGIN
           FROM c WHERE c.main_purps_nm = N'공동주택' OR c.오피스텔 = 1
     )
     SELECT pk = CAST(r.mgm_pmsrgst_pk AS VARCHAR(50)), r.pnu,
-           이름 = CAST(NULLIF(LTRIM(RTRIM(r.bld_nm)), N'') AS NVARCHAR(200)),
+           이름 = CAST(gold.fn_name_mask(NULLIF(LTRIM(RTRIM(r.bld_nm)), N'')) AS NVARCHAR(200)),  /* 390: 끝 괄호의 사람 이름은 가린다 */
            대지위치 = r.plat_plc, 용도 = CASE WHEN r.main_purps_nm = N'업무시설' THEN N'오피스텔(업무시설)' ELSE r.main_purps_nm END,
            세대 = r.hhld_cnt, 호 = r.ho_cnt, 가구 = r.fmly_cnt, 연면적 = r.tot_area, 주건축물수 = r.main_bld_cnt,
            허가일 = r.arch_pms_day, 착공예정일 = r.stcns_sched_day, 착공일 = r.real_stcns_day,
