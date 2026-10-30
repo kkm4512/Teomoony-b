@@ -9,6 +9,9 @@
        · 뒤에 ' 외 1' · '외2인' 같은 꼬리가 있으면 떼고 본다
      → 그 괄호를 '(개인 이름 가림)' 으로 바꾼다. 지명(신안군) · 동 이름(가동) · 시설(창고 · 경로당)은 그대로 둔다.
      · 사람 이름 꼴인 기관 · 지명(유치원 · 국방부 · 이태원 …)은 낱말로 뺀다(첫 실행 44,452곳 중 괄호 말 상위를 눈으로 본 결과).
+   ★ 10-30 23:10 덧붙임: 괄호 안 **'대표 · 대표자 · 대표이사' 뒤의 사람 이름**도 가린다 — "(유진건설(주)대표김승일)" · "((주)도솔대표:이정국)".
+     단지 388 · 허가 9,957 · 옛 대장 61 에 나가고 있었다(첫 규칙은 괄호 안이 이름뿐일 때만 봤다). 대표 뒤는 2~4글자 · 성씨로 시작하면 이름으로 본다.
+     대표 뒤가 3~4글자(띄움표 ':' 뒤면 2글자도) · 성씨로 시작하면 이름으로 본다('대표단지' 같은 붙은 2글자는 아님). 괄호 안에 괄호가 있으면("(유한회사로젠목포(대표:장형권))") 끝 ')' 의 짝 '(' 부터 본다.
    ★ 새로 만들어지는 이름도 가려지게 두 표에 트리거(gold.complex · gold.closed_site — 둘 다 제자리 갱신 표). */
 SET QUOTED_IDENTIFIER ON;
 SET ANSI_NULLS ON;
@@ -17,9 +20,28 @@ GO
 IF OBJECT_ID('gold.fn_name_mask') IS NOT NULL
     EXEC (N'CREATE OR ALTER FUNCTION gold.fn_name_mask (@s NVARCHAR(400)) RETURNS NVARCHAR(400) AS BEGIN RETURN @s END');
 GO
-CREATE OR ALTER FUNCTION gold.fn_is_person_name (@in NVARCHAR(50)) RETURNS BIT WITH SCHEMABINDING AS
+CREATE OR ALTER FUNCTION gold.fn_is_person_name (@in NVARCHAR(400)) RETURNS BIT WITH SCHEMABINDING AS
 BEGIN
-    DECLARE @s NVARCHAR(50) = LTRIM(RTRIM(ISNULL(@in, N'')));
+    DECLARE @s NVARCHAR(400) = LTRIM(RTRIM(ISNULL(@in, N'')));
+    /* 10-30 23:10 '…대표 이름' · '대표자 · 대표이사' — 대표 뒤만 본다(대표 앞의 회사 이름까지 같이 가린다) */
+    DECLARE @r INT = CHARINDEX(N'표대', REVERSE(@s));
+    IF @r > 0
+    BEGIN
+        DECLARE @n NVARCHAR(400) = RIGHT(@s, @r - 1);
+        IF @n LIKE N'이사%' SET @n = SUBSTRING(@n, 3, 50);
+        IF @n LIKE N'자%' SET @n = SUBSTRING(@n, 2, 50);
+        DECLARE @띔 BIT = CASE WHEN @n LIKE N'[:;： ./]%' THEN 1 ELSE 0 END;
+        IF CHARINDEX(N',', @n) > 0 SET @n = LEFT(@n, CHARINDEX(N',', @n) - 1);   -- '대표:윤우석,윤성수' — 첫 이름으로 본다   -- '대표:홍길' 처럼 띄운 2글자만 이름으로(붙은 '대표단지' 는 아님)
+        SET @n = LTRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@n, N':', N''), N';', N''), N'：', N''), N' ', N''), N')', N''), N'(', N''));
+        SET @n = REPLACE(REPLACE(REPLACE(REPLACE(@n, N'.', N''), N'/', N''), N'[', N''), N']', N'');
+        DECLARE @w2 INT = CHARINDEX(N'외', @n);
+        IF @w2 > 2 AND SUBSTRING(@n, @w2 + 1, 10) NOT LIKE N'%[^0-9 인명]%' SET @n = LEFT(@n, @w2 - 1);
+        IF @n NOT LIKE N'%[^가-힣]%' AND (LEN(@n) IN (3, 4) OR (LEN(@n) = 2 AND @띔 = 1))
+           AND (CHARINDEX(LEFT(@n, 1), N'김이박최정강조윤장임한오서신권황안송류유전홍고문양손배백허남심노하곽성차주우구민나진지엄채원천방공현함변염여추도소석선설마길연위표명기반왕금옥육인맹제모탁국어은편용예봉경사부가복태목형계피두감음빈동온호범좌팽승간상시갈단견당화창옹순빙종풍') > 0
+                OR LEFT(@n, 2) IN (N'남궁', N'황보', N'제갈', N'선우', N'독고', N'사공', N'서문'))
+            RETURN 1;
+        RETURN 0;
+    END
     /* ' 외 1' · '외2인' · '외 3명' 꼬리 떼기 */
     DECLARE @w INT = CHARINDEX(N'외', @s);
     IF @w > 3 AND SUBSTRING(@s, @w + 1, 10) NOT LIKE N'%[^0-9 인명]%' SET @s = RTRIM(LEFT(@s, @w - 1));
@@ -40,7 +62,15 @@ BEGIN
     IF @s IS NULL RETURN NULL;
     DECLARE @t NVARCHAR(400) = RTRIM(@s);
     IF RIGHT(@t, 1) <> N')' OR CHARINDEX(N'(', @t) = 0 RETURN @s;
-    DECLARE @p INT = LEN(@t) - CHARINDEX(N'(', REVERSE(@t)) + 1;          -- 마지막 '(' 자리
+    /* 끝 ')' 의 짝 '(' — 괄호 안 괄호("(유한회사로젠목포(대표:장형권))")까지 센다 */
+    DECLARE @p INT = LEN(@t), @d INT = 0;
+    WHILE @p > 0
+    BEGIN
+        IF SUBSTRING(@t, @p, 1) = N')' SET @d += 1;
+        ELSE IF SUBSTRING(@t, @p, 1) = N'(' BEGIN SET @d -= 1; IF @d = 0 BREAK; END
+        SET @p -= 1;
+    END
+    IF @p < 1 SET @p = LEN(@t) - CHARINDEX(N'(', REVERSE(@t)) + 1;   -- 짝이 안 맞는 괄호('(주)서평건설대표이광기)')는 마지막 '(' 부터
     IF gold.fn_is_person_name(SUBSTRING(@t, @p + 1, LEN(@t) - @p - 1)) = 0 RETURN @s;
     RETURN RTRIM(LEFT(@t, @p - 1)) + N' (개인 이름 가림)';
 END

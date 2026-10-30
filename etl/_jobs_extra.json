@@ -3850,5 +3850,12 @@
     "250000",
     "--minutes",
     "150"
+  ],
+  "zs-mask2-par": [
+    "python",
+    "svc_dirty_sql.py",
+    "..\\deploy\\sql\\_mask_ids2.sql",
+    "이름 가림 390 대표",
+    "json"
   ]
 }
