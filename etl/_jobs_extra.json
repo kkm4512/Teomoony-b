@@ -3857,5 +3857,14 @@
     "..\\deploy\\sql\\_mask_ids2.sql",
     "이름 가림 390 대표",
     "json"
+  ],
+  "cl-kapt-cost-par": [
+    "python",
+    "kapt_cost_monthly.py"
+  ],
+  "zt-kapt-cost-check-par": [
+    "python",
+    "kapt_cost_monthly.py",
+    "--check"
   ]
 }

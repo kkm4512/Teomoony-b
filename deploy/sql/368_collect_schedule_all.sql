@@ -9,7 +9,7 @@ USING (VALUES
  (N'건축인허가', N'건축인허가', 'cl-permit-par', 'monthly 5 04:00', N'월간', N'data.go.kr 15136267', 'once', 0),
  (N'폐쇄대장', N'폐쇄대장', 'cl-closed-par', 'monthly 5 04:30', N'월간', N'data.go.kr 15137093', 'once', 0),
  (N'K-apt 단지정보', N'K-apt', 'cl-kapt-par', 'weekly tue 04:00', N'실시간(파일은 주간)', N'data.go.kr 15057332 · 15058453 · 15073271', 'once', 0),
- (N'관리비', N'관리비', 'cl-kapt-cost-par', 'monthly 3 04:00', N'다음 달 말일까지 올림(공동주택관리법 시행령 23조 8항)', N'data.go.kr 15057937 · 15059469', 'once', 0),
+ (N'관리비', N'관리비', 'cl-kapt-cost-par', 'monthly 3 04:00', N'다음 달 말일까지 올림(공동주택관리법 시행령 23조 8항)', N'data.go.kr 15057937 · 15059469', 'once', 1),   -- 10-31 켬(392 · kapt_cost_monthly.py)
  (N'토지이동 → 필지', N'토지이동', 'cl-landmove-par', 'weekly thu 04:00', N'수시', N'data.go.kr 15123974 · 15123899', 'once', 0),
  (N'토지이용계획 · 용도지역', N'토지이용계획', 'cl-landuse-par', 'quarterly 1,4,7,10 15 03:00', N'파일 분기 · API 실시간', N'data.go.kr 15123973 · 15123895', 'once', 0),
  (N'공동주택가격', N'공동주택가격', 'cl-hsprc-par', 'quarterly 5,10 5 03:00', N'4월 30일 공시 + 9월 30일 추가(6/1 기준)', N'부동산 가격공시법 시행령 43조', 'once', 0),
