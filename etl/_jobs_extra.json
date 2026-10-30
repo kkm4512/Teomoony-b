@@ -3814,5 +3814,10 @@
   "zh-housepms-par": [
     "python",
     "house_permit_load.py"
+  ],
+  "zx-pmsextra-par": [
+    "python",
+    "pms_extra_load.py",
+    "--skip-fetch"
   ]
 }

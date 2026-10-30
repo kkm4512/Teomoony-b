@@ -124,5 +124,8 @@ if step == "서비스":
     # 10-30: 주택인허가(사업계획승인) 새 달 → 지도 '승인' 핀(gold.house_plan). 실패해도 대장 갱신은 끝난 것 — 기록만 남긴다
     r = subprocess.run([py, "house_permit_load.py"], cwd=HERE)
     if r.returncode: log(f"! 주택인허가 갱신 실패(종료코드 {r.returncode}) — 다음 달에 다시")
+    # 10-30 "ㄱㄱ+": 건축인허가 부가 원문(평형 · 층 · 대수선 · 철거멸실 · 가설 · 주차장) → gold.pms_* (386)
+    r = subprocess.run([py, "pms_extra_load.py"], cwd=HERE)
+    if r.returncode: log(f"! 건축인허가 부가 원문 갱신 실패(종료코드 {r.returncode}) — 다음 달에 다시")
     st_put(M, "끝")
 log(f"끝 — {M}")
