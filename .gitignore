@@ -41,3 +41,6 @@ etl/_master_raw/
 deploy/sql/t308_link_*.sql
 deploy/sql/tned_*.sql
 deploy/sql/_버림_*
+
+# 2026-10-31 K-apt 자료실 관리비 엑셀(받은 원본 · 연도별 50~70MB)
+data/kapt_cost_xlsx/

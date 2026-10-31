@@ -3866,5 +3866,22 @@
     "python",
     "kapt_cost_monthly.py",
     "--check"
+  ],
+  "zk-kapt-xlsx-par": [
+    "python",
+    "kapt_xlsx_get.py",
+    "--board",
+    "123541"
+  ],
+  "zk-kapt-xlsx-test-par": [
+    "python",
+    "kapt_cost_xlsx_load.py",
+    "--no-fetch",
+    "--years",
+    "2025"
+  ],
+  "cl-kapt-xlsx-par": [
+    "python",
+    "kapt_cost_xlsx_load.py"
   ]
 }
