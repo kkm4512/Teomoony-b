@@ -3944,5 +3944,16 @@
     "python",
     "export_sbx.py",
     "--trades"
+  ],
+  "cl-pyeong-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\399_pyeong_run.sql"
+  ],
+  "zr-pyeong-apply-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "python ms_q.py ..\\deploy\\sql\\399_pyeong_price.sql; python ms_q.py ..\\deploy\\sql\\400_schedule_pyeong.sql; python ms_q.py ..\\deploy\\sql\\399_pyeong_run.sql"
   ]
 }
