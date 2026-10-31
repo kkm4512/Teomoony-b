@@ -3,6 +3,7 @@
   py export_sbx.py            → etl/_export/sbx/<이름>.tsv + <이름>.cols.json   (기준 표 + 자료별 코드 쓰임)
   py export_sbx.py --old      → 지금 코드가 아닌(사전 현행에 없는) 법정동 코드를 든 원본 줄 전부(old.*)
   py export_sbx.py --parcels  → 지금 필지 PNU 전부(시도별 parcel_<시도>.tsv) — 옛 코드 줄을 지번으로 지금 코드에 잇는 데 쓴다
+  py export_sbx.py --trades   → 2023-01-01 이후 매매(전월세 아님) 중 단지에 이어진 줄(평단가 시험) + 그 단지들 한 줄씩
 ★ 읽기만 한다(READ UNCOMMITTED). 원본은 건드리지 않는다.
 ★ TSV: 탭 구분 · 첫 줄 칸 이름 · NULL = \\N · 값 안의 \\ 탭 줄바꿈은 \\\\ \\t \\n 으로 바꿔 적는다(되돌릴 수 있게).
 """
@@ -82,7 +83,22 @@ def 필지():
     json.dump(dict(만든때=datetime.datetime.now().isoformat(timespec="seconds"), 줄=목록), open(os.path.join(OUT, "_manifest_parcel.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 
+def 매매():
+    e = env(); cur = ms_conn(e).cursor(); 목록 = {}
+    목록["trade_kinds"] = 꺼내기(cur, "trade_kinds", "SELECT trade_kind, is_rent, n = COUNT_BIG(*), 전용있음 = SUM(CASE WHEN exclu_use_ar IS NOT NULL THEN 1 ELSE 0 END) FROM silver.rtms_trade WHERE deal_ymd >= '20230101' GROUP BY trade_kind, is_rent")
+    목록["trades"] = 꺼내기(cur, "trades", """SELECT trade_sk, complex_id = match_complex_id, trade_kind, deal_ymd, deal_amount, exclu_use_ar, floor_no,
+               canceled = CAST(ISNULL(is_canceled, 0) AS INT), direct = CASE WHEN dealing_gbn LIKE N'%직거래%' THEN 1 ELSE 0 END,
+               share = CASE WHEN NULLIF(LTRIM(RTRIM(share_dealing)), '') IS NOT NULL AND share_dealing NOT LIKE N'%직거래%' THEN 1 ELSE 0 END,
+               sgg_cd, umd_cd
+          FROM silver.rtms_trade WHERE is_rent = 0 AND deal_ymd >= '20230101' AND match_complex_id IS NOT NULL""")
+    목록["trade_complex"] = 꺼내기(cur, "trade_complex", """SELECT c.complex_id, c.rep_pnu, c.hhld_cnt_sum, c.dong_cnt, c.oldest_use_apr, c.centroid_lat, c.centroid_lng, c.is_active, c.merged_into, c.complex_nm
+          FROM gold.complex c WHERE c.complex_id IN (SELECT DISTINCT match_complex_id FROM silver.rtms_trade WHERE is_rent = 0 AND deal_ymd >= '20230101')
+             OR (c.is_active = 1 AND c.merged_into IS NULL AND c.hhld_cnt_sum >= 20)""")
+    json.dump(dict(만든때=datetime.datetime.now().isoformat(timespec="seconds"), 줄=목록), open(os.path.join(OUT, "_manifest_trades.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+
 def main():
+    if "--trades" in sys.argv: return 매매()
     if "--old" in sys.argv: return 옛()
     if "--parcels" in sys.argv: return 필지()
     e = env(); cur = ms_conn(e).cursor(); 목록 = {}

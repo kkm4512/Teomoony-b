@@ -3939,5 +3939,10 @@
     "-NoProfile",
     "-Command",
     "git -C ..\\..\\Teomoony-f pull --ff-only origin main; git -C ..\\..\\Teomoony-f log --oneline -3"
+  ],
+  "zx-export-trades-par": [
+    "python",
+    "export_sbx.py",
+    "--trades"
   ]
 }
