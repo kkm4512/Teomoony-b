@@ -75,12 +75,15 @@ LAYERS = [
   ("closed", None,
    """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
       SELECT s.site_key, s.pnu, s.shter_day, s.이름, s.이름출처, s.주용도, s.동수, s.총괄세대, s.사용승인일, s.폐쇄구분,
-             s.plat_plc, s.new_plat_plc, s.lat, s.lng, s.now_complex_id, now_nm = c.complex_nm, s.위치근거
+             s.plat_plc, s.new_plat_plc, s.lat, s.lng, s.now_complex_id, now_nm = c.complex_nm, s.위치근거,
+             /* 10-31: 같은 필지의 지금 단지 수 — now_complex_id 는 하나일 때만 적혀서, 둘 이상인 필지가 '지금 대장 없는 자리' 로 칠해졌다 */
+             지금단지수 = (SELECT COUNT(DISTINCT cp.complex_id) FROM gold.complex_pnu cp
+                            JOIN gold.complex x ON x.complex_id = cp.complex_id AND x.merged_into IS NULL WHERE cp.pnu = s.pnu)
         FROM gold.closed_site s LEFT JOIN gold.complex c ON c.complex_id = s.now_complex_id
        WHERE s.lat IS NOT NULL AND s.lng IS NOT NULL""",
    [("site_key", "text"), ("pnu", "text"), ("shter_day", "text"), ("이름", "text"), ("이름출처", "text"), ("주용도", "text"), ("동수", "int"),
     ("총괄세대", "int"), ("사용승인일", "text"), ("폐쇄구분", "text"), ("plat_plc", "text"), ("new_plat_plc", "text"), ("lat", D), ("lng", D),
-    ("now_complex_id", "int"), ("now_nm", "text"), ("위치근거", "text")],
+    ("now_complex_id", "int"), ("now_nm", "text"), ("위치근거", "text"), ("지금단지수", "int")],
    ["(lng, lat)"]),
   ("newbuild", None,
    """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
