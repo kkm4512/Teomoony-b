@@ -84,6 +84,13 @@ def emit(keep, e, sql_out):
         _t = Transformer.from_crs("EPSG:5174", "EPSG:4326", always_xy=True); conv = _t.transform
     except Exception:
         sys.path.insert(0, HERE); from tm5174 import to_wgs84 as conv
+    # ★ 2026-10-31: 전국을 쪽으로 받으면 같은 관리번호가 두 번 오기도 한다(쪽 경계가 밀림) → 한 묶음 안에서 원문갱신이 늦은 것 하나만.
+    #   같은 MERGE 에 같은 키가 둘이면 PK 위반으로 묶음 전체가 실패했다(350쪽 · PHMD…016).
+    하나 = {}
+    for x in keep:
+        k = x.get("MNG_NO")
+        if k not in 하나 or str(x.get("DAT_UPDT_PNT") or "") >= str(하나[k].get("DAT_UPDT_PNT") or ""): 하나[k] = x
+    keep = list(하나.values())
     out = []
     for x in keep:
         try: X, Y = float(x.get("CRD_INFO_X") or ""), float(x.get("CRD_INFO_Y") or "")
