@@ -59,15 +59,19 @@ LAYERS = [
    ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
   ("adm", None,
    """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+      /* 397 (2026-10-31): 행안부 코드 · 이름은 공식 연계(gold.adm_link — 연계정보 행정구역코드)로. 상가 다수결(a.adm_cd_mois)은 쓰지 않는다 */
       SELECT a.adm_cd_sgis, a.year, a.adm_nm, a.emd_nm, a.centroid_lat, a.centroid_lng,
-             a.adm_cd_mois, a.mois_nm, a.상가수, a.연결상가, a.연결비율, a.갈림내역, a.geojson, a.geojson_s1, a.geojson_s2,
-             연결 = CASE WHEN a.연결비율 >= 90 THEN N'확인' WHEN a.연결비율 IS NOT NULL THEN N'갈림' END,
-             a.bbox_minx, a.bbox_miny, a.bbox_maxx, a.bbox_maxy
+             adm_cd_mois = LEFT(k.행정동코드, 8), mois_nm = k.행정동명, a.상가수, a.연결상가, a.연결비율, a.갈림내역, a.geojson, a.geojson_s1, a.geojson_s2,
+             연결 = CASE WHEN k.행정동코드 IS NOT NULL THEN N'확인' END,
+             a.bbox_minx, a.bbox_miny, a.bbox_maxx, a.bbox_maxy,
+             행정동표시 = k.표시, 현행 = CAST(k.현행 AS INT), 말소일자 = k.말소일자
         FROM silver.adm_boundary a
+        LEFT JOIN gold.adm_link k ON k.adm_cd_sgis = a.adm_cd_sgis AND k.year = a.year
        WHERE a.year = (SELECT MAX(year) FROM silver.adm_boundary)""",
    [("adm_cd_sgis", "text"), ("year", "text"), ("adm_nm", "text"), ("emd_nm", "text"), ("centroid_lat", D), ("centroid_lng", D),
     ("adm_cd_mois", "text"), ("mois_nm", "text"), ("상가수", "int"), ("연결상가", "int"), ("연결비율", D), ("갈림내역", "text"),
-    ("geojson", "text"), ("geojson_s1", "text"), ("geojson_s2", "text"), ("연결", "text"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)], []),
+    ("geojson", "text"), ("geojson_s1", "text"), ("geojson_s2", "text"), ("연결", "text"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D),
+    ("행정동표시", "text"), ("현행", "int"), ("말소일자", "text")], []),
   ("closed", None,
    """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
       SELECT s.site_key, s.pnu, s.shter_day, s.이름, s.이름출처, s.주용도, s.동수, s.총괄세대, s.사용승인일, s.폐쇄구분,

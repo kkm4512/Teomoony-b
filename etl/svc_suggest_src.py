@@ -31,14 +31,14 @@ SUGG = [
      WHERE l.ri_nm IS NULL AND l.emd_nm IS NOT NULL
        AND EXISTS (SELECT 1 FROM gold.complex c WHERE c.rep_pnu >= CAST(l.lawd_cd + '000000000' AS CHAR(19)) AND c.rep_pnu <= CAST(l.lawd_cd + '999999999' AS CHAR(19)))""",
    [("lawd_cd", "text"), ("emd_nm", "text"), ("full_nm", "text"), ("경계있음", "int"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)], []),
-  # 3 행정동 (최신 해 경계) — 지금없음 = 최신 연계정보 분기에 그 코드가 없음
+  # 3 행정동 (최신 해 경계) — 397 (2026-10-31): 이름 · 지금없음은 공식 연계(gold.adm_link)와 행안부 이력으로.
+  #   지금없음 = 경계가 이어진 행안부 행정동이 말소됨(예: 2026.07.01 인천 중구 · 전남광주 통합 — 통계청 새 경계가 나오기 전)
   ("sg_adm", None, U + """
-    DECLARE @최신분기 DATE = (SELECT MAX(개정일자) FROM silver.region_link_snap WHERE 완전 = 1);
-    SELECT a.adm_cd_sgis, a.year, a.adm_nm, a.emd_nm, a.mois_nm, a.연결비율,
+    SELECT a.adm_cd_sgis, a.year, a.adm_nm, a.emd_nm, mois_nm = k.행정동명, a.연결비율,
            minx = a.bbox_minx, miny = a.bbox_miny, maxx = a.bbox_maxx, maxy = a.bbox_maxy,
-           지금없음 = CASE WHEN @최신분기 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM silver.region_link l
-                             WHERE l.개정일자 = @최신분기 AND l.행정구역코드 = a.adm_cd_sgis) THEN 1 ELSE 0 END
+           지금없음 = CASE WHEN k.현행 = 0 THEN 1 ELSE 0 END
       FROM silver.adm_boundary a
+      LEFT JOIN gold.adm_link k ON k.adm_cd_sgis = a.adm_cd_sgis AND k.year = a.year
      WHERE a.year = (SELECT MAX(year) FROM silver.adm_boundary)""",
    [("adm_cd_sgis", "text"), ("year", "text"), ("adm_nm", "text"), ("emd_nm", "text"), ("mois_nm", "text"), ("연결비율", D),
     ("minx", D), ("miny", D), ("maxx", D), ("maxy", D), ("지금없음", "int")], []),

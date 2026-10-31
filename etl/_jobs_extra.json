@@ -3919,5 +3919,13 @@
     "-NoProfile",
     "-Command",
     "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'export_sbx.py --parcels' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "cl-mois-jscode-par": [
+    "python",
+    "mois_jscode_watch.py"
+  ],
+  "zr-region-apply-par": [
+    "python",
+    "apply_region_1031.py"
   ]
 }
