@@ -3899,5 +3899,25 @@
     "-NoProfile",
     "-Command",
     "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'geocode_academy' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  ],
+  "zx-export-sbx-par": [
+    "python",
+    "export_sbx.py"
+  ],
+  "zx-export-old-par": [
+    "python",
+    "export_sbx.py",
+    "--old"
+  ],
+  "zx-export-parcel-par": [
+    "python",
+    "export_sbx.py",
+    "--parcels"
+  ],
+  "zk-kill-export-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'export_sbx.py --parcels' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
   ]
 }

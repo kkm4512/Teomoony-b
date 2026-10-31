@@ -44,3 +44,5 @@ deploy/sql/_버림_*
 
 # 2026-10-31 K-apt 자료실 관리비 엑셀(받은 원본 · 연도별 50~70MB)
 data/kapt_cost_xlsx/
+etl/_export/sbx/
+data/region_code/
