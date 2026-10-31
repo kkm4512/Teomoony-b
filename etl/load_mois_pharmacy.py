@@ -3,6 +3,7 @@
   py load_mois_pharmacy.py                 DB 로
   py load_mois_pharmacy.py --sql-out 파일  SQL 파일로(/api/_apply)
 ★ 개방자치단체코드로 받는다: 서울 25구(3000000 … 3240000) + 안양시(3830000). 한 쪽 100건 상한 · 쪽당 ~10초라 전국(7만)은 2시간 — 구별로 2.3만.
+★ --all (2026-10-31): 코드 조건 없이 전국 전부. 50쪽(5천 건)마다 MERGE 하고 넘어간다 — 같은 관리번호는 덮어쓰기라 중간에 끊겨도 받은 줄은 원문 그대로.
 ★ 좌표 EPSG:5174 → WGS84: pyproj 가 있으면 그것, 없으면 tm5174.py(같은 정의, pyproj 와 6cm 안 — 2026-10-22 대조).
 """
 import argparse, io, json, os, sys, time, urllib.parse, urllib.request
@@ -23,7 +24,7 @@ CODES = [str(3000000 + i * 10000) for i in range(25)] + ["3830000"]
 
 
 def get(key, page, code):
-    q = urllib.parse.urlencode({"serviceKey": key, "pageNo": page, "numOfRows": 100, "returnType": "json", "cond[OPN_ATMY_GRP_CD::EQ]": code})
+    q = urllib.parse.urlencode({"serviceKey": key, "pageNo": page, "numOfRows": 100, "returnType": "json", **({"cond[OPN_ATMY_GRP_CD::EQ]": code} if code else {})})
     for t in range(5):
         try:
             j = json.loads(urllib.request.urlopen(URL + "?" + q, timeout=90).read().decode("utf-8"))
@@ -41,13 +42,27 @@ def d10(v):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--sql-out"); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("--sql-out"); ap.add_argument("--all", action="store_true")
+    ap.add_argument("--from-page", type=int, default=1); a = ap.parse_args()
     e = env(); key = e.get("DATA_GO_KR_KEY", "")
     try:
         from pyproj import Transformer
         _t = Transformer.from_crs("EPSG:5174", "EPSG:4326", always_xy=True); conv = _t.transform
     except Exception:
         sys.path.insert(0, HERE); from tm5174 import to_wgs84 as conv
+    if a.all:
+        tot, rows = get(key, a.from_page, None); p = a.from_page; 받음 = 0
+        쪽수 = (tot + 99) // 100; print(f"전국 {tot:,}건 · {쪽수}쪽 · {p}쪽부터", flush=True)
+        while True:
+            if p % 50 == 0 or p >= 쪽수 or not rows:
+                if rows: emit(rows, e, None); 받음 += len(rows)
+                print(f"  {p}/{쪽수}쪽 · 넣음 {받음:,}", flush=True); rows = []
+                if p >= 쪽수: break
+            p += 1; _, more = get(key, p, None)
+            if not more: print(f"  {p}쪽 빈 응답 — 멈춤 (--from-page {p})", flush=True); break
+            rows += more; time.sleep(0.1)
+        if 받음 + (a.from_page - 1) * 100 < tot: print(f"★ 받은 {받음:,} < totalCount {tot:,}", flush=True)
+        return
     keep = []
     for code in CODES:
         tot, rows = get(key, 1, code); p = 1

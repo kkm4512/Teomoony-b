@@ -3883,5 +3883,14 @@
   "cl-kapt-xlsx-par": [
     "python",
     "kapt_cost_xlsx_load.py"
+  ],
+  "a3-pharmacy-all-par": [
+    "python",
+    "load_mois_pharmacy.py",
+    "--all"
+  ],
+  "ga-academy-geo-par": [
+    "python",
+    "geocode_academy.py"
   ]
 }
