@@ -3891,6 +3891,13 @@
   ],
   "ga-academy-geo-par": [
     "python",
-    "geocode_academy.py"
+    "geocode_academy.py",
+    "--with-mismatch"
+  ],
+  "zk-kill-geoacad-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'geocode_academy' }; 'kill ' + @($p).Count; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
   ]
 }

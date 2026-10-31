@@ -55,7 +55,12 @@ def 같은주소인가(넣은, 정제):
        공백만 접어서 비교한다 — 괄호 안의 법정동·건물명은 덧붙는 정보라 괜찮다."""
     if not 정제: return False
     접기 = lambda s: " ".join(str(s).split())
-    return 접기(넣은) in 접기(정제)
+    a, b = 접기(넣은), 접기(정제)
+    # ★ 2026-10-31: 시도 이름이 바뀐 곳(강원도→강원특별자치도 2023 · 전라북도→전북특별자치도 2024 · 제주도→제주특별자치도)은
+    #   비교할 때만 맞춰 본다. road_addr 원문은 그대로 둔다. 시도 뒤(시군구·도로명·번호)는 여전히 그대로 품고 있어야 한다.
+    for 옛, 새 in (("강원도 ", "강원특별자치도 "), ("전라북도 ", "전북특별자치도 "), ("제주도 ", "제주특별자치도 ")):
+        if a.startswith(옛) and b.startswith(새): a = 새 + a[len(옛):]
+    return a in b
 
 
 def 한번(key, addr):
@@ -91,6 +96,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="주소 몇 개만 (0=전부)")
     ap.add_argument("--retry-fail", action="store_true", help="FAIL 로 남은 것만")
     ap.add_argument("--sleep", type=float, default=0.12)
+    ap.add_argument("--with-mismatch", action="store_true", help="MISMATCH 로 남은 것도 다시 (비교 규칙을 고쳤을 때)")
     a = ap.parse_args()
 
     e = env()
@@ -106,7 +112,8 @@ def main():
     cur = conn.cursor()
 
     조건 = ("geocode_status LIKE 'FAIL%'" if a.retry_fail
-            else "(geocode_status IS NULL OR geocode_status LIKE 'FAIL%')")
+            else "(geocode_status IS NULL OR geocode_status LIKE 'FAIL%'"
+                 + (" OR geocode_status = 'MISMATCH'" if a.with_mismatch else "") + ")")
     cur.execute(f"""SELECT road_addr, COUNT(*)
                       FROM silver.academy
                      WHERE is_current = 1 AND road_addr IS NOT NULL AND {조건}
