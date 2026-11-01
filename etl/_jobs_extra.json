@@ -4020,5 +4020,10 @@
     "cinfo",
     "--force",
     "cinfo"
+  ],
+  "zq-405-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\405_redev_same.sql"
   ]
 }
