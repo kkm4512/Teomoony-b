@@ -104,8 +104,8 @@ SUGG = [
   ("sg_kinder", None, U + "SELECT k.kinder_nm, 주소 = k.addr, lat = k.lat, lon = k.lng, k.kinder_cd FROM silver.kindergarten k WHERE k.lat IS NOT NULL",
    [("kinder_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("kinder_cd", "text")], []),
   # 10 학원 — 좌표 없는 것도 담는다(못 붙인 수를 센다)
-  ("sg_academy", None, U + "SELECT a.aca_nm, a.realm_sc_nm, 주소 = a.road_addr, a.lat, a.lon FROM silver.academy a WHERE a.is_current = 1",
-   [("aca_nm", "text"), ("realm_sc_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D)], [TRGM("aca_nm")]),
+  ("sg_academy", None, U + "SELECT a.aca_nm, a.realm_sc_nm, 주소 = a.road_addr, a.lat, a.lon, a.aca_asnum FROM silver.academy a WHERE a.is_current = 1",
+   [("aca_nm", "text"), ("realm_sc_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("aca_asnum", "text")], [TRGM("aca_nm")]),
   # 11 상가(61만) — 앞부분 일치만 → lower(이름) 앞부분 색인
   # ★ 적재DB 의 LIKE · = 는 너비도 무시한다(_AS 뒤에 _WS 없음): '제１GKI'(전각 1)가 '제1%' 에 걸린다 → NFKC + 소문자 키로 비교(10-25 대조에서 1건)
   ("sg_semas",
