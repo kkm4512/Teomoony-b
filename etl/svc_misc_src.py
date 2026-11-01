@@ -103,3 +103,14 @@ MISC += [
     ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)],
    ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
 ]
+
+# ---- 4묶음(11-01): 관심 단지 목록(/api/my)의 단지 칸 · 관심 넣기의 '있는 단지인가' — gold.complex 그대로(합쳐진 것 포함) ----
+MISC += [
+  ("cinfo",
+   """SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(CHECKSUM(complex_id, complex_nm, rep_plat_plc, hhld_cnt_sum, oldest_use_apr, is_active, merged_into)), '/',
+                    MAX(trade_last_ymd), '/', CHECKSUM_AGG(CHECKSUM(trade_last_ymd, trade_last_amt))) FROM gold.complex""",
+   U + """SELECT complex_id, complex_nm, rep_plat_plc, hhld_cnt_sum, oldest_use_apr, trade_last_ymd, trade_last_amt, is_active, merged_into
+            FROM gold.complex""",
+   [("complex_id", "int PRIMARY KEY"), ("complex_nm", "text"), ("rep_plat_plc", "text"), ("hhld_cnt_sum", "int"), ("oldest_use_apr", "text"),
+    ("trade_last_ymd", "text"), ("trade_last_amt", "text"), ("is_active", "boolean"), ("merged_into", "int")], []),
+]

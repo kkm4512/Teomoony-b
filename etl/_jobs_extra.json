@@ -3993,5 +3993,32 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\404_schedule_svc_pub.sql"
+  ],
+  "zs-app-copy-par": [
+    "python",
+    "app_to_pg.py"
+  ],
+  "zs-app-check-par": [
+    "python",
+    "app_to_pg.py",
+    "--check"
+  ],
+  "zs-app-delta-par": [
+    "python",
+    "app_to_pg.py",
+    "--reqlog-only"
+  ],
+  "zs-app-cut-par": [
+    "python",
+    "app_to_pg.py",
+    "--cutover"
+  ],
+  "zs-cinfo-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "cinfo",
+    "--force",
+    "cinfo"
   ]
 }
