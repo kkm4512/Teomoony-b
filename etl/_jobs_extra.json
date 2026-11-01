@@ -4054,5 +4054,15 @@
     "sg_cmap_s",
     "--force",
     "sg_cmap_s"
+  ],
+  "zq-406-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\406_school_zone_cnt.sql"
+  ],
+  "cl-school-zone-cnt-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\406_school_zone_cnt_run.sql"
   ]
 }
