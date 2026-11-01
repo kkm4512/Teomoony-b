@@ -94,8 +94,8 @@ MISC += [
   ("landzone",
    "SELECT CONCAT(COUNT_BIG(*), '/', MAX(valid_from), '/', MAX(valid_to)) FROM silver.land_use_zone",
    U + """SELECT uname, dyear, dnum, sigg_name, area_m2_approx, geojson,
-                 grp = CASE WHEN uname LIKE N'%주거지역' THEN '주거' WHEN uname LIKE N'%상업지역' THEN '상업'
-                            WHEN uname LIKE N'%공업지역' THEN '공업' WHEN uname LIKE N'%녹지지역' THEN '녹지' ELSE NULL END,
+                 grp = CASE WHEN uname LIKE N'%주거지역' THEN N'주거' WHEN uname LIKE N'%상업지역' THEN N'상업'
+                            WHEN uname LIKE N'%공업지역' THEN N'공업' WHEN uname LIKE N'%녹지지역' THEN N'녹지' ELSE NULL END,   -- N'' — 그냥 '' 은 pymssql 이 cp949 바이트로 받아 글자가 깨졌다
                  bbox_minx, bbox_miny, bbox_maxx, bbox_maxy
             FROM silver.land_use_zone
            WHERE is_current = 1 AND geojson IS NOT NULL AND LTRIM(ISNULL(uname, '')) <> ''""",
