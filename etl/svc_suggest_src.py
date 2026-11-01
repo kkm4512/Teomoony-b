@@ -205,7 +205,8 @@ SUGG = [
     SELECT v.complex_id, v.dong_cnt, v.pnu_cnt, v.has_recap,
            s_all = LOWER(CONCAT(ISNULL(v.complex_nm, N''), NCHAR(1), ISNULL(v.rep_plat_plc, N''), NCHAR(1), ISNULL(v.rep_road_addr, N'')))
       FROM gold.v_complex_map v
-     ORDER BY v.dong_cnt DESC, v.pnu_cnt DESC, v.complex_id""",   /* 정렬 순서대로 담는다(MSSQL 내림차순 = NULL 뒤) — 정렬 색인을 따라 읽어도 디스크를 차례로 읽는다 */
+     /* 정렬 순서대로 담는다(MSSQL 내림차순 = NULL 뒤) — 정렬 색인을 따라 읽어도 디스크를 차례로 읽는다 */
+     ORDER BY v.dong_cnt DESC, v.pnu_cnt DESC, v.complex_id""",
    [("complex_id", "int PRIMARY KEY"), ("dong_cnt", "int"), ("pnu_cnt", "int"), ("has_recap", "boolean"), ("s_all", "text")],
    [TRGM("s_all"), "(dong_cnt DESC NULLS LAST, pnu_cnt DESC NULLS LAST, complex_id)"]),
   # 부속지번(건축물대장 관련지번) → 단지
