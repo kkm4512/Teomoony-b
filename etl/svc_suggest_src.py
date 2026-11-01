@@ -96,12 +96,13 @@ SUGG = [
                                FROM silver.subway_station s WHERE s.is_current = 1 AND s.lat IS NOT NULL GROUP BY s.sttn_nm""",
    [("sttn_nm", "text"), ("노선", "text"), ("lat", D), ("lon", D)], []),
   # 8 학교
-  ("sg_school", None, U + """SELECT s.school_nm, s.school_se, 주소 = COALESCE(s.rdnmadr, s.lnmadr), s.lat, s.lon
+  # 11-01: school_id 를 같이 담는다 — 자동완성에서 고르면 학교 상세(학생 · 교원 · 공시)를 연다
+  ("sg_school", None, U + """SELECT s.school_nm, s.school_se, 주소 = COALESCE(s.rdnmadr, s.lnmadr), s.lat, s.lon, s.school_id
                                FROM silver.school s WHERE s.is_current = 1 AND s.lat IS NOT NULL""",
-   [("school_nm", "text"), ("school_se", "text"), ("주소", "text"), ("lat", D), ("lon", D)], [TRGM("school_nm")]),
+   [("school_nm", "text"), ("school_se", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("school_id", "text")], [TRGM("school_nm")]),
   # 9 유치원
-  ("sg_kinder", None, U + "SELECT k.kinder_nm, 주소 = k.addr, lat = k.lat, lon = k.lng FROM silver.kindergarten k WHERE k.lat IS NOT NULL",
-   [("kinder_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D)], []),
+  ("sg_kinder", None, U + "SELECT k.kinder_nm, 주소 = k.addr, lat = k.lat, lon = k.lng, k.kinder_cd FROM silver.kindergarten k WHERE k.lat IS NOT NULL",
+   [("kinder_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("kinder_cd", "text")], []),
   # 10 학원 — 좌표 없는 것도 담는다(못 붙인 수를 센다)
   ("sg_academy", None, U + "SELECT a.aca_nm, a.realm_sc_nm, 주소 = a.road_addr, a.lat, a.lon FROM silver.academy a WHERE a.is_current = 1",
    [("aca_nm", "text"), ("realm_sc_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D)], [TRGM("aca_nm")]),
