@@ -35,3 +35,26 @@
          WHERE NOT EXISTS (SELECT 1 FROM #여덟단지 d WHERE d.pnu = e.pnu)
            AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = e.house_manage_no AND l.pblanc_no = e.pblanc_no)
          GROUP BY e.house_manage_no, e.pblanc_no HAVING COUNT(DISTINCT n.kapt_code) = 1;
+        /* 열째 (402 · 11-01 사장님 "우리 데이터 안에서 확실하게 이을 수 있다면 이어서"): 공고 지번이 **사업 전 옛 지번**이라 지금 필지에 없는 곳(올림픽파크 포레온 공고 둔촌동 170-1 ↔ 단지 633).
+           다리 = K-apt: K-apt 는 사업 전 지번으로 등록된 곳이 많고, 그 K-apt 는 이미 단지에 이어져 있다(gold.complex_kapt — 도로명코드 · 공식 지번 · 사용승인일로 이은 것).
+           ① 공고 지번(PNU) = 그 K-apt 지번 ② 그 지번의 K-apt 가 가리키는 단지가 하나 ③ 그 지번에 다른 지금 단지(세대 있음)가 없음
+           ④ 단지 사용승인 ≥ 그 지번 첫 공고일 ⑤ 크기(⑧과 같음: 아파트 공고는 세대 ≥ 공급). 이름은 안 본다. */
+        IF OBJECT_ID('tempdb..#열') IS NOT NULL DROP TABLE #열;
+        SELECT k.pnu, n = COUNT(DISTINCT ck.complex_id), complex_id = MIN(ck.complex_id)
+          INTO #열
+          FROM silver.kapt_complex k JOIN gold.complex_kapt ck ON ck.kapt_code = k.kapt_code
+          JOIN gold.complex c ON c.complex_id = ck.complex_id AND c.is_active = 1 AND c.merged_into IS NULL
+         WHERE k.is_current = 1 AND k.pnu IN (SELECT pnu FROM #여덟)
+         GROUP BY k.pnu;
+        INSERT INTO gold.applyhome_link (house_manage_no, pblanc_no, complex_id, kapt_code, 근거, 거리m)
+        SELECT e.house_manage_no, e.pblanc_no, x.complex_id, NULL,
+               N'공고 지번 = 단지에 이어진 K-apt 지번(사업 전 지번) · 그 지번의 단지 하나 · 사용승인이 첫 공고 이후 · 세대 ≥ 공급', 0
+          FROM #여덟 e JOIN #열 x ON x.pnu = e.pnu
+          JOIN gold.complex c ON c.complex_id = x.complex_id
+         WHERE x.n = 1
+           AND NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = e.house_manage_no AND l.pblanc_no = e.pblanc_no)
+           AND NOT EXISTS (SELECT 1 FROM gold.complex_pnu cp JOIN gold.complex c2 ON c2.complex_id = cp.complex_id AND c2.is_active = 1 AND c2.merged_into IS NULL AND c2.hhld_cnt_sum > 0
+                            WHERE cp.pnu = e.pnu AND cp.complex_id <> x.complex_id)
+           AND LEN(c.oldest_use_apr) = 8 AND c.oldest_use_apr >= e.첫
+           AND ( (e.공고종류 = 'APT' AND ISNULL(c.hhld_cnt_sum, 0) > 0 AND c.hhld_cnt_sum >= ISNULL(e.tot_suply, 0))
+              OR (e.공고종류 <> 'APT' AND ISNULL(c.hhld_cnt_sum, 0) >= ISNULL(e.tot_suply, 0)) );

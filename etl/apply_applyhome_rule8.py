@@ -10,7 +10,9 @@ conn = ms_conn(env()); cur = conn.cursor()
 cur.execute("SELECT OBJECT_DEFINITION(OBJECT_ID('gold.usp_refresh_applyhome_link'))"); d = cur.fetchone()[0]
 cur.execute("SELECT house_manage_no + '|' + pblanc_no FROM gold.applyhome_link"); 전 = {r[0] for r in cur.fetchall()}
 if "여덟째 (402" in d and "--replace" in sys.argv:   # 블록을 고쳐 다시 끼운다(402 시작 ~ 아홉째 끝)
-    i = d.index("        /* 여덟째 (402"); j = d.index("HAVING COUNT(DISTINCT n.kapt_code) = 1;", i) + len("HAVING COUNT(DISTINCT n.kapt_code) = 1;")
+    i = d.index("        /* 여덟째 (402")
+    끝표 = "OR (e.공고종류 <> 'APT' AND ISNULL(c.hhld_cnt_sum, 0) >= ISNULL(e.tot_suply, 0)) );"   # 열째 끝(있으면)
+    j = (d.index(끝표, i) + len(끝표)) if 끝표 in d[i:] else (d.index("HAVING COUNT(DISTINCT n.kapt_code) = 1;", i) + len("HAVING COUNT(DISTINCT n.kapt_code) = 1;"))
     d = d[:i] + blk.strip("\n") + d[j:]
     d = re.sub(r"^\s*CREATE\s+(OR\s+ALTER\s+)?PROCEDURE", "CREATE OR ALTER PROCEDURE", d, count=1, flags=re.I)
     cur.execute(d); print("프로시저의 402 블록 바꿈", flush=True)
