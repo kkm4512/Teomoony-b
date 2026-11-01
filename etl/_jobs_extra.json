@@ -4064,5 +4064,11 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\406_school_zone_cnt_run.sql"
+  ],
+  "zk-kill-collect-cron-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -match 'collect_cron' }; 'kill ' + @($p).Count; $p | ForEach-Object { 'pid ' + $_.ProcessId + ' since ' + $_.CreationDate; Stop-Process -Id $_.ProcessId -Force }"
   ]
 }
