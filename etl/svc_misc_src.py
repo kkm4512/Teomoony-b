@@ -93,13 +93,13 @@ MISC += [
    ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
   ("landzone",
    "SELECT CONCAT(COUNT_BIG(*), '/', MAX(valid_from), '/', MAX(valid_to)) FROM silver.land_use_zone",
-   U + """SELECT uname, dyear, dnum, sigg_name, area_m2_approx, geojson,
+   U + """SELECT uname, dyear, dnum, sigg_name, area_m2_approx, geojson, zone_key,
                  grp = CASE WHEN uname LIKE N'%주거지역' THEN N'주거' WHEN uname LIKE N'%상업지역' THEN N'상업'
                             WHEN uname LIKE N'%공업지역' THEN N'공업' WHEN uname LIKE N'%녹지지역' THEN N'녹지' ELSE NULL END,   -- N'' — 그냥 '' 은 pymssql 이 cp949 바이트로 받아 글자가 깨졌다
                  bbox_minx, bbox_miny, bbox_maxx, bbox_maxy
             FROM silver.land_use_zone
            WHERE is_current = 1 AND geojson IS NOT NULL AND LTRIM(ISNULL(uname, '')) <> ''""",
-   [("uname", "text"), ("dyear", "text"), ("dnum", "text"), ("sigg_name", "text"), ("area_m2_approx", D), ("geojson", "text"), ("grp", "text"),
+   [("uname", "text"), ("dyear", "text"), ("dnum", "text"), ("sigg_name", "text"), ("area_m2_approx", D), ("geojson", "text"), ("zone_key", "text"), ("grp", "text"),
     ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)],
    ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
 ]
