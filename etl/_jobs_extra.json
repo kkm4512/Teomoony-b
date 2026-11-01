@@ -4025,5 +4025,26 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\405_redev_same.sql"
+  ],
+  "cl-redev-same-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\405_redev_same_run.sql"
+  ],
+  "zs-sgredev-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "sg_redev",
+    "--force",
+    "sg_redev"
+  ],
+  "zs-pub-redev-par": [
+    "python",
+    "svc_pub_urls.py",
+    "--only",
+    "redev_detail",
+    "--force",
+    "redev_detail"
   ]
 }

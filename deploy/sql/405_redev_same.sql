@@ -30,3 +30,26 @@ SELECT 묶음 = COUNT(DISTINCT same_key), 기록 = COUNT(*), 대표 = SUM(대표
   FROM gold.v_redev_same;
 SELECT * FROM gold.v_redev_same WHERE present_sn IN ('11000UQ120PS202407010702', '11000UQ120PS202411014477');
 GO
+/* 굳힌 표 — 자동완성(적재DB 경로)이 글자마다 뷰를 다시 세지 않게(0.8초). 매일 07:35 다시(1초 안팎 · 정비구역 원본은 분기마다) */
+CREATE OR ALTER PROCEDURE gold.usp_build_redev_same AS
+BEGIN
+  SET NOCOUNT ON;
+  IF OBJECT_ID('gold.redev_same') IS NULL
+    CREATE TABLE gold.redev_same (present_sn VARCHAR(40) NOT NULL PRIMARY KEY, same_key VARCHAR(40) NOT NULL, 묶음수 INT NOT NULL, 대표 BIT NOT NULL, 기록말 NVARCHAR(1000) NULL);
+  BEGIN TRAN;
+    DELETE FROM gold.redev_same;
+    INSERT INTO gold.redev_same (present_sn, same_key, 묶음수, 대표, 기록말) SELECT present_sn, same_key, 묶음수, 대표, 기록말 FROM gold.v_redev_same;
+  COMMIT;
+  SELECT 기록 = COUNT(*), 겹친묶음 = COUNT(DISTINCT CASE WHEN 묶음수 > 1 THEN same_key END) FROM gold.redev_same;
+END
+GO
+EXEC gold.usp_build_redev_same;
+GO
+MERGE ops.collect_schedule AS d
+USING (VALUES (N'정비구역 같은 경계 묶음', N'파생(정비구역)', 'cl-redev-same-par', 'daily 07:35', N'파생',
+               N'경계가 똑같은 정비구역 기록 묶음(405) — 검색 한 줄 · 지도 한 면', 'once', 1))
+      AS s (이름, 자료, 작업, 주기, 출처주기, 근거, 못돎이면, 켜짐)
+ON d.작업 = s.작업
+WHEN MATCHED THEN UPDATE SET 이름 = s.이름, 자료 = s.자료, 주기 = s.주기, 출처주기 = s.출처주기, 근거 = s.근거, 못돎이면 = s.못돎이면, 켜짐 = s.켜짐
+WHEN NOT MATCHED THEN INSERT (이름, 자료, 작업, 주기, 출처주기, 근거, 못돎이면, 켜짐) VALUES (s.이름, s.자료, s.작업, s.주기, s.출처주기, s.근거, s.못돎이면, s.켜짐);
+GO

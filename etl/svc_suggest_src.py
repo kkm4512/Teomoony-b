@@ -99,11 +99,13 @@ SUGG = [
                                      (SELECT TOP 1 h.complex_id FROM gold.complex_redev_hit h
                                        WHERE h.present_sn = z.present_sn AND h.xarea >= 0.5 * h.parea
                                          AND h.xarea >= 0.9 * (SELECT SUM(h2.xarea) FROM gold.complex_redev_hit h2 WHERE h2.present_sn = z.present_sn)
-                                       ORDER BY h.xarea DESC) END
-                              FROM silver.redev_zone z WHERE z.is_current = 1""",
+                                       ORDER BY h.xarea DESC) END,
+                                   /* 11-01 경계가 똑같은 기록 묶음(405): 대표만 한 줄 · 보조에 모든 기록의 분류 · 단계 */
+                                   대표 = CAST(ISNULL(rs.대표, 1) AS INT), rs.기록말
+                              FROM silver.redev_zone z LEFT JOIN gold.redev_same rs ON rs.present_sn = z.present_sn WHERE z.is_current = 1""",
    [("present_sn", "text"), ("zone_nm", "text"), ("biz_nm", "text"), ("propel_nm", "text"), ("centroid_lat", D), ("centroid_lng", D),
     ("minx", D), ("miny", D), ("maxx", D), ("maxy", D), ("zone_ns", "text"), ("biz_ns", "text"),
-    ("biz_lclas_nm", "text"), ("propel_pct", "int"), ("area_m2", D), ("has_geo", "int"), ("main_complex_id", "int")], []),
+    ("biz_lclas_nm", "text"), ("propel_pct", "int"), ("area_m2", D), ("has_geo", "int"), ("main_complex_id", "int"), ("대표", "int"), ("기록말", "text")], []),
   # 7 지하철역 — 역 이름마다 한 줄(노선 합치기 · 평균 좌표는 적재DB 가 계산)
   ("sg_subway", None, U + """SELECT s.sttn_nm, 노선 = STRING_AGG(s.line_nm, N' · ') WITHIN GROUP (ORDER BY s.line_nm), lat = AVG(s.lat), lon = AVG(s.lon)
                                FROM silver.subway_station s WHERE s.is_current = 1 AND s.lat IS NOT NULL GROUP BY s.sttn_nm""",
