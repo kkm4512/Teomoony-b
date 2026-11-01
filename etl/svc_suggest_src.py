@@ -198,6 +198,15 @@ SUGG = [
    #   (사이에 chr(1) — 검색어에 그 글자가 없으니 칸을 넘어 걸리지 않는다). 10-25 '은평' 2.6초(3초 제한 턱밑).
    [TRGM("s_all"), "(dong_cnt DESC NULLS LAST, pnu_cnt DESC NULLS LAST, complex_id)", "(left(rep_pnu, 10))"],
    ["UPDATE {t} SET s_all = lower(coalesce(complex_nm, '') || chr(1) || coalesce(rep_plat_plc, '') || chr(1) || coalesce(rep_road_addr, ''))"]),
+  # 11-01 QA: 단지가 57만 → 656만 곳으로 늘어 두 글자 검색('장위' · '은평' · '강남')이 순서 색인을 따라 큰 표(6.7GB)를 훑다 55초 — 3초 제한에 걸려 적재DB 경로(1분+)로 넘어갔다.
+  #   → 검색 칸만 둔 좁은 표(번호 · 정렬 칸 · s_all)를 따로: 두 글자는 이 표를 통째로 훑어 맞는 번호를 모은 뒤 정렬(색인 순서 따라가지 않음).
+  #   s_all 은 sg_cmap 과 같은 식(이름 · 지번 · 도로명, chr(1) 사이, 소문자) — 적재DB LOWER 로 만든다(한글 · 영문은 PG lower 와 같다).
+  ("sg_cmap_s", None, U + """
+    SELECT v.complex_id, v.dong_cnt, v.pnu_cnt, v.has_recap,
+           s_all = LOWER(CONCAT(ISNULL(v.complex_nm, N''), NCHAR(1), ISNULL(v.rep_plat_plc, N''), NCHAR(1), ISNULL(v.rep_road_addr, N'')))
+      FROM gold.v_complex_map v""",
+   [("complex_id", "int PRIMARY KEY"), ("dong_cnt", "int"), ("pnu_cnt", "int"), ("has_recap", "boolean"), ("s_all", "text")],
+   [TRGM("s_all"), "(dong_cnt DESC NULLS LAST, pnu_cnt DESC NULLS LAST, complex_id)"]),
   # 부속지번(건축물대장 관련지번) → 단지
   ("sg_atch", None, U + """SELECT cb.complex_id, a.plat_plc FROM silver.bld_atch_jibun a JOIN gold.complex_bld cb ON cb.mgm_bldrgst_pk = a.mgm_bldrgst_pk
                              WHERE a.is_current = 1""",

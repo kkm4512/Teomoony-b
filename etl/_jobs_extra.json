@@ -4046,5 +4046,13 @@
     "redev_detail",
     "--force",
     "redev_detail"
+  ],
+  "zs-cmaps-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "sg_cmap_s",
+    "--force",
+    "sg_cmap_s"
   ]
 }
