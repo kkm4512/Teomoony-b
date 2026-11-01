@@ -86,11 +86,16 @@ SUGG = [
   ("sg_redev", None, U + """SELECT z.present_sn, z.zone_nm, z.biz_nm, z.propel_nm, z.centroid_lat, z.centroid_lng,
                                    minx = z.bbox_minx, miny = z.bbox_miny, maxx = z.bbox_maxx, maxy = z.bbox_maxy,
                                    zone_ns = REPLACE(z.zone_nm, ' ', ''), biz_ns = REPLACE(z.biz_nm, ' ', ''),
-                                   z.biz_lclas_nm, z.propel_pct, z.area_m2, has_geo = CASE WHEN z.geojson IS NOT NULL THEN 1 ELSE 0 END
+                                   z.biz_lclas_nm, z.propel_pct, z.area_m2, has_geo = CASE WHEN z.geojson IS NOT NULL THEN 1 ELSE 0 END,
+                                   /* 11-01: 역세권사업(미리내집 · 청년안심주택 · 장기전세 · 역세권 활성화)은 단지 하나의 공급 공고라 그 단지 줄과 겹친다 —
+                                      단지 면적의 절반 넘게 겹치는 단지가 **하나**면 그 단지(위치로만). 자동완성이 그 단지가 목록에 있으면 이 줄을 뺀다 */
+                                   main_complex_id = CASE WHEN z.biz_lclas_nm = N'역세권사업' THEN
+                                     (SELECT MIN(h.complex_id) FROM gold.complex_redev_hit h WHERE h.present_sn = z.present_sn AND h.xarea >= 0.5 * h.parea
+                                       HAVING COUNT(*) = 1) END
                               FROM silver.redev_zone z WHERE z.is_current = 1""",
    [("present_sn", "text"), ("zone_nm", "text"), ("biz_nm", "text"), ("propel_nm", "text"), ("centroid_lat", D), ("centroid_lng", D),
     ("minx", D), ("miny", D), ("maxx", D), ("maxy", D), ("zone_ns", "text"), ("biz_ns", "text"),
-    ("biz_lclas_nm", "text"), ("propel_pct", "int"), ("area_m2", D), ("has_geo", "int")], []),
+    ("biz_lclas_nm", "text"), ("propel_pct", "int"), ("area_m2", D), ("has_geo", "int"), ("main_complex_id", "int")], []),
   # 7 지하철역 — 역 이름마다 한 줄(노선 합치기 · 평균 좌표는 적재DB 가 계산)
   ("sg_subway", None, U + """SELECT s.sttn_nm, 노선 = STRING_AGG(s.line_nm, N' · ') WITHIN GROUP (ORDER BY s.line_nm), lat = AVG(s.lat), lon = AVG(s.lon)
                                FROM silver.subway_station s WHERE s.is_current = 1 AND s.lat IS NOT NULL GROUP BY s.sttn_nm""",
