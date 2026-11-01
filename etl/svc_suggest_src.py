@@ -73,7 +73,13 @@ SUGG = [
      WHERE k.is_current = 1
     UNION ALL
     SELECT al.complex_id, 'alias', al.실거래이름, REPLACE(al.실거래이름, ' ', ''), CASE WHEN c.complex_id IS NOT NULL AND c.merged_into IS NULL THEN 1 ELSE 0 END
-      FROM gold.complex_alias al LEFT JOIN gold.complex c ON c.complex_id = al.complex_id""",
+      FROM gold.complex_alias al LEFT JOIN gold.complex c ON c.complex_id = al.complex_id
+    UNION ALL
+    /* 11-01: 단지에 이어진 청약 공고 이름(applyhome_link · 코드 · 지번으로 이음) — 공고 줄을 안 보이게 했으니 공고 이름으로도 그 단지가 찾아지게 */
+    SELECT DISTINCT l.complex_id, 'applyhome', p.house_nm, REPLACE(p.house_nm, ' ', ''), CASE WHEN c.merged_into IS NULL THEN 1 ELSE 0 END
+      FROM gold.applyhome_link l JOIN silver.applyhome_pblanc p ON p.house_manage_no = l.house_manage_no AND p.pblanc_no = l.pblanc_no
+      JOIN gold.complex c ON c.complex_id = l.complex_id
+     WHERE l.complex_id IS NOT NULL""",
    [("complex_id", "int"), ("src", "text"), ("name", "text"), ("name_ns", "text"), ("live", "int")],
    [TRGM("name_ns"), TRGM("name")]),
   # 5 신축(대장 없는 K-apt)
@@ -88,10 +94,12 @@ SUGG = [
                                    zone_ns = REPLACE(z.zone_nm, ' ', ''), biz_ns = REPLACE(z.biz_nm, ' ', ''),
                                    z.biz_lclas_nm, z.propel_pct, z.area_m2, has_geo = CASE WHEN z.geojson IS NOT NULL THEN 1 ELSE 0 END,
                                    /* 11-01: 역세권사업(미리내집 · 청년안심주택 · 장기전세 · 역세권 활성화)은 단지 하나의 공급 공고라 그 단지 줄과 겹친다 —
-                                      단지 면적의 절반 넘게 겹치는 단지가 **하나**면 그 단지(위치로만). 자동완성이 그 단지가 목록에 있으면 이 줄을 뺀다 */
+                                      단지 면적의 절반 넘게 겹치고 · 구역에 걸린 단지 겹친 넓이의 90% 이상을 차지하는 단지(위치로만 · 포레온처럼 큰 단지 안의 파출소 · 쉼터 단지는 무시). 자동완성이 그 단지가 목록에 있으면 이 줄을 뺀다 */
                                    main_complex_id = CASE WHEN z.biz_lclas_nm = N'역세권사업' THEN
-                                     (SELECT MIN(h.complex_id) FROM gold.complex_redev_hit h WHERE h.present_sn = z.present_sn AND h.xarea >= 0.5 * h.parea
-                                       HAVING COUNT(*) = 1) END
+                                     (SELECT TOP 1 h.complex_id FROM gold.complex_redev_hit h
+                                       WHERE h.present_sn = z.present_sn AND h.xarea >= 0.5 * h.parea
+                                         AND h.xarea >= 0.9 * (SELECT SUM(h2.xarea) FROM gold.complex_redev_hit h2 WHERE h2.present_sn = z.present_sn)
+                                       ORDER BY h.xarea DESC) END
                               FROM silver.redev_zone z WHERE z.is_current = 1""",
    [("present_sn", "text"), ("zone_nm", "text"), ("biz_nm", "text"), ("propel_nm", "text"), ("centroid_lat", D), ("centroid_lng", D),
     ("minx", D), ("miny", D), ("maxx", D), ("maxy", D), ("zone_ns", "text"), ("biz_ns", "text"),
