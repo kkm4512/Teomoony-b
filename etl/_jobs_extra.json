@@ -3955,5 +3955,14 @@
     "-NoProfile",
     "-Command",
     "python ms_q.py ..\\deploy\\sql\\399_pyeong_price.sql; python ms_q.py ..\\deploy\\sql\\400_schedule_pyeong.sql; python ms_q.py ..\\deploy\\sql\\399_pyeong_run.sql"
+  ],
+  "cl-school-site-par": [
+    "python",
+    "apply_school_site.py",
+    "--run"
+  ],
+  "zr-school-site-par": [
+    "python",
+    "apply_school_site.py"
   ]
 }

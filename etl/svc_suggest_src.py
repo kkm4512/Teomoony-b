@@ -97,12 +97,16 @@ SUGG = [
    [("sttn_nm", "text"), ("노선", "text"), ("lat", D), ("lon", D)], []),
   # 8 학교
   # 11-01: school_id 를 같이 담는다 — 자동완성에서 고르면 학교 상세(학생 · 교원 · 공시)를 연다
-  ("sg_school", None, U + """SELECT s.school_nm, s.school_se, 주소 = COALESCE(s.rdnmadr, s.lnmadr), s.lat, s.lon, s.school_id
-                               FROM silver.school s WHERE s.is_current = 1 AND s.lat IS NOT NULL""",
-   [("school_nm", "text"), ("school_se", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("school_id", "text")], [TRGM("school_nm")]),
+  # 11-01: complex_id = 그 학교 좌표가 든 단지(401 gold.complex_school_site — 위치로만) — 자동완성이 학교 줄을 그 단지 줄과 하나로 합친다
+  ("sg_school", None, U + """SELECT s.school_nm, s.school_se, 주소 = COALESCE(s.rdnmadr, s.lnmadr), s.lat, s.lon, s.school_id, g.complex_id
+                               FROM silver.school s
+                               LEFT JOIN gold.complex_school_site g ON g.종류 = N'학교' AND g.키 = s.school_id
+                              WHERE s.is_current = 1 AND s.lat IS NOT NULL""",
+   [("school_nm", "text"), ("school_se", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("school_id", "text"), ("complex_id", "int")], [TRGM("school_nm")]),
   # 9 유치원
-  ("sg_kinder", None, U + "SELECT k.kinder_nm, 주소 = k.addr, lat = k.lat, lon = k.lng, k.kinder_cd FROM silver.kindergarten k WHERE k.lat IS NOT NULL",
-   [("kinder_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("kinder_cd", "text")], []),
+  ("sg_kinder", None, U + """SELECT k.kinder_nm, 주소 = k.addr, lat = k.lat, lon = k.lng, k.kinder_cd, g.complex_id FROM silver.kindergarten k
+                               LEFT JOIN gold.complex_school_site g ON g.종류 = N'유치원' AND g.키 = k.kinder_cd WHERE k.lat IS NOT NULL""",
+   [("kinder_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("kinder_cd", "text"), ("complex_id", "int")], []),
   # 10 학원 — 좌표 없는 것도 담는다(못 붙인 수를 센다)
   ("sg_academy", None, U + "SELECT a.aca_nm, a.realm_sc_nm, 주소 = a.road_addr, a.lat, a.lon, a.aca_asnum FROM silver.academy a WHERE a.is_current = 1",
    [("aca_nm", "text"), ("realm_sc_nm", "text"), ("주소", "text"), ("lat", D), ("lon", D), ("aca_asnum", "text")], [TRGM("aca_nm")]),
