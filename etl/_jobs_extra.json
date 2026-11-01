@@ -3978,5 +3978,20 @@
     "svc_pub_urls.py",
     "--force",
     "all"
+  ],
+  "cl-svc-pub-par": [
+    "python",
+    "svc_pub_urls.py",
+    "--heavy"
+  ],
+  "zs-pub2-par": [
+    "python",
+    "svc_pub_urls.py",
+    "--heavy"
+  ],
+  "zq-404-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\404_schedule_svc_pub.sql"
   ]
 }
