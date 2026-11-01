@@ -3964,5 +3964,19 @@
   "zr-school-site-par": [
     "python",
     "apply_school_site.py"
+  ],
+  "zs-map2-par": [
+    "python",
+    "svc_layers.py",
+    "--only",
+    "prebuild,houseplan,redev_zone,landzone",
+    "--force",
+    "prebuild,houseplan,redev_zone,landzone"
+  ],
+  "zs-pub-par": [
+    "python",
+    "svc_pub_urls.py",
+    "--force",
+    "all"
   ]
 }

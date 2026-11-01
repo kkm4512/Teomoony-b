@@ -59,3 +59,47 @@ MISC = [
              WHERE NOT EXISTS (SELECT 1 FROM gold.applyhome_link l WHERE l.house_manage_no = p.house_manage_no)) x""",
    [("안이어짐", "int"), ("자리없음", "int")], []),
 ]
+
+# ---- 11-01 사장님 "서비스 DB 로 분리하는 건 해야 하는 거니까 해봐" — 1묶음: 지도 위 남은 bbox 층 넷 ----
+# 화면 질의(server.js /api/prebuilds · /api/houseplans · /api/redev · /api/zones)에서 bbox 조건 · TOP 만 뺀 그대로. 형은 화면 응답과 같게(float · char 그대로).
+MISC += [
+  ("prebuild",
+   """SELECT CONCAT((SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(CHECKSUM(pk, 이름, 대지위치, 용도, 세대, 호, 착공일, lat, lng))) FROM gold.pre_build), '|',
+                    (SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(CHECKSUM(complex_id, 종류, 원문pk))) FROM gold.pre_complex))""",
+   U + """SELECT b.pk, b.이름, b.대지위치, b.용도, b.세대, b.호, b.착공일, b.lat, b.lng, g.complex_id
+            FROM gold.pre_build b LEFT JOIN gold.pre_complex g ON g.종류 = 'p' AND g.원문pk = b.pk""",
+   [("pk", "text"), ("이름", "text"), ("대지위치", "text"), ("용도", "text"), ("세대", "int"), ("호", "int"), ("착공일", "text"),
+    ("lat", D), ("lng", D), ("complex_id", "int")],
+   ["(lng, lat)"]),
+  ("houseplan",
+   """SELECT CONCAT((SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(CHECKSUM(hp_pk, 이름, 대지위치, 세대, 주건축물수, 용도, 승인일, 착공예정일, 착공일,
+                                                                    사용검사예정일, 상태, lat, lng, 위치근거))) FROM gold.house_plan), '|',
+                    (SELECT CONCAT(COUNT_BIG(*), '/', CHECKSUM_AGG(CHECKSUM(complex_id, 종류, 원문pk))) FROM gold.pre_complex))""",
+   U + """SELECT h.hp_pk, h.이름, h.대지위치, h.세대, h.주건축물수, h.용도, h.승인일, h.착공예정일, h.착공일, h.사용검사예정일, h.상태, h.lat, h.lng, h.위치근거,
+                 complex_id = (SELECT g.complex_id FROM gold.pre_complex g WHERE g.종류 = 'h' AND g.원문pk = h.hp_pk)
+            FROM gold.house_plan h WHERE h.상태 <> N'완공 대장 있음'""",
+   [("hp_pk", "text"), ("이름", "text"), ("대지위치", "text"), ("세대", "int"), ("주건축물수", "int"), ("용도", "text"), ("승인일", "text"),
+    ("착공예정일", "text"), ("착공일", "text"), ("사용검사예정일", "text"), ("상태", "text"), ("lat", D), ("lng", D), ("위치근거", "text"),
+    ("complex_id", "int")],
+   ["(lng, lat)"]),
+  # 정비사업 구역 겹쳐보기 — 재개발(reb) · 그 밖(etc) 가름은 화면 쪽(svc.js)이 server.js 와 **같은 목록**으로 한다
+  ("redev_zone",
+   "SELECT CONCAT(COUNT_BIG(*), '/', MAX(valid_from), '/', MAX(valid_to)) FROM silver.redev_zone",
+   U + """SELECT present_sn, zone_nm, biz_lclas_nm, biz_nm, propel_cd, propel_nm, propel_pct, propel_fam, area_m2, geojson,
+                 bbox_minx, bbox_miny, bbox_maxx, bbox_maxy
+            FROM silver.redev_zone WHERE is_current = 1 AND geojson IS NOT NULL""",
+   [("present_sn", "text"), ("zone_nm", "text"), ("biz_lclas_nm", "text"), ("biz_nm", "text"), ("propel_cd", "text"), ("propel_nm", "text"),
+    ("propel_pct", "int"), ("propel_fam", "text"), ("area_m2", D), ("geojson", "text"), ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)],
+   ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
+  ("landzone",
+   "SELECT CONCAT(COUNT_BIG(*), '/', MAX(valid_from), '/', MAX(valid_to)) FROM silver.land_use_zone",
+   U + """SELECT uname, dyear, dnum, sigg_name, area_m2_approx, geojson,
+                 grp = CASE WHEN uname LIKE N'%주거지역' THEN '주거' WHEN uname LIKE N'%상업지역' THEN '상업'
+                            WHEN uname LIKE N'%공업지역' THEN '공업' WHEN uname LIKE N'%녹지지역' THEN '녹지' ELSE NULL END,
+                 bbox_minx, bbox_miny, bbox_maxx, bbox_maxy
+            FROM silver.land_use_zone
+           WHERE is_current = 1 AND geojson IS NOT NULL AND LTRIM(ISNULL(uname, '')) <> ''""",
+   [("uname", "text"), ("dyear", "text"), ("dnum", "text"), ("sigg_name", "text"), ("area_m2_approx", D), ("geojson", "text"), ("grp", "text"),
+    ("minx", D), ("miny", D), ("maxx", D), ("maxy", D)],
+   ["USING gist (box(point(minx, miny), point(maxx, maxy)))"]),
+]

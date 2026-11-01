@@ -238,6 +238,10 @@ def main():
             import svc_layers; svc_layers.run(ms, pg)
         except Exception as ex:
             pg.rollback(); print(f"  !! 지도 층 실패: {ex}", flush=True)
+        try:   # 11-01 서비스DB 분리 1묶음: 주소 단위 응답(동네 고르기 · 범위 · 정비구역 상세) — 원천이 그대로인 묶음은 건너뜀
+            import svc_pub_urls; svc_pub_urls.run(ms, pg)
+        except Exception as ex:
+            pg.rollback(); print(f"  !! 주소 묶음 실패: {ex}", flush=True)
     if a.markers_only:
         with pg.cursor() as c:
             c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 마커만' WHERE publish_id = %s", (pid,))
