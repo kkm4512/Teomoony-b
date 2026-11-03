@@ -4080,5 +4080,12 @@
     "select regexp_replace(l.ip, '[.:][0-9a-f]+$', '.x') ip, max(l.\"나라\") c, count(*) n, sum(case when l.\"경로\" like '/api/complexes/%' then 1 else 0 end) cx, sum(case when l.\"경로\" like '/api/search%' or l.\"경로\" like '/api/suggest%' then 1 else 0 end) sr, to_char(min(l.\"때\"),'MM-DD HH24:MI') f, to_char(max(l.\"때\"),'MM-DD HH24:MI') t, left(max(l.ua), 70) ua from app.req_log l where l.\"때\" >= now() - interval '3 days' and not l.\"내부\" and l.\"상태\" < 400 and not exists (select 1 from app.usage_owner_ip o where o.ip = l.ip) and coalesce(l.ua,'') !~* '(bot|crawl|spider|slurp|curl|wget|python|go-http|headless|scan|preview|monitor|http-client|java/|okhttp|axios|node-fetch|facebookexternalhit|bingpreview)' group by l.ip order by count(*) desc limit 40",
     "select count(*) filter (where last_login >= now() - interval '7 days') login7, count(*) filter (where created_at >= now() - interval '7 days') new7, count(*) users from app.app_user",
     "select to_char(\"때\",'MM-DD HH24:MI') t, \"종류\", left(\"질문\",40) q from app.ask_log where \"때\" >= now() - interval '3 days' order by 1 desc limit 15"
+  ],
+  "zs-owner-q": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select case when ip like '%:%' then array_to_string((string_to_array(ip, ':'))[1:4], ':') || ':*' else regexp_replace(ip, '[.][0-9]+$', '.x') end p, count(*), min(\"처음\"), max(\"처음\"), string_agg(distinct \"근거\", ',') from app.usage_owner_ip group by 1 order by 2 desc",
+    "select array_to_string((string_to_array(ip, ':'))[1:4], ':') p, count(distinct ip) ips, count(*) req, min(\"때\"), max(\"때\") from app.req_log where ip like '%:%' and \"때\" >= now() - interval '14 days' group by 1 order by 3 desc limit 10"
   ]
 }
