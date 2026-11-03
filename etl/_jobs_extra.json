@@ -4087,5 +4087,19 @@
     "..\\deploy\\svc\\pg\\000_noop.sql",
     "select case when ip like '%:%' then array_to_string((string_to_array(ip, ':'))[1:4], ':') || ':*' else regexp_replace(ip, '[.][0-9]+$', '.x') end p, count(*), min(\"처음\"), max(\"처음\"), string_agg(distinct \"근거\", ',') from app.usage_owner_ip group by 1 order by 2 desc",
     "select array_to_string((string_to_array(ip, ':'))[1:4], ':') p, count(distinct ip) ips, count(*) req, min(\"때\"), max(\"때\") from app.req_log where ip like '%:%' and \"때\" >= now() - interval '14 days' group by 1 order by 3 desc limit 10"
+  ],
+  "zs-usage-bak": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "create table if not exists app.usage_hour_bak_20261103 as select * from app.usage_hour",
+    "select (select count(*) from app.usage_hour) now_rows, (select count(*) from app.usage_hour_bak_20261103) bak_rows",
+    "select to_char(\"시각\",'MM-DD') d, \"갈래\", sum(\"횟수\")::int n from app.usage_hour where \"시각\" >= now() - interval '14 days' and \"갈래\" in ('사람','수집 추정','스크립트') group by 1,2 order by 1,2"
+  ],
+  "zp-usage-rebuild-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 900 'http://localhost:5173/api/_usage_rebuild'; $r.Content"
   ]
 }
