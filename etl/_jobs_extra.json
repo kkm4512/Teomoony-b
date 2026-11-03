@@ -4091,8 +4091,7 @@
   "zs-usage-bak": [
     "python",
     "svc_sql.py",
-    "..\\deploy\\svc\\pg\\000_noop.sql",
-    "create table if not exists app.usage_hour_bak_20261103 as select * from app.usage_hour",
+    "..\\deploy\\svc\\pg\\006_usage_bak.sql",
     "select (select count(*) from app.usage_hour) now_rows, (select count(*) from app.usage_hour_bak_20261103) bak_rows",
     "select to_char(\"시각\",'MM-DD') d, \"갈래\", sum(\"횟수\")::int n from app.usage_hour where \"시각\" >= now() - interval '14 days' and \"갈래\" in ('사람','수집 추정','스크립트') group by 1,2 order by 1,2"
   ],
