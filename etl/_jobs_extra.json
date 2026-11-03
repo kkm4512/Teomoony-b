@@ -4100,5 +4100,11 @@
     "-NoProfile",
     "-Command",
     "$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 900 'http://localhost:5173/api/_usage_rebuild'; $r.Content"
+  ],
+  "zs-usage-q2": [
+    "python",
+    "svc_sql.py",
+    "..\\deploy\\svc\\pg\\000_noop.sql",
+    "select case when ip like '%:%' then array_to_string((string_to_array(ip, ':'))[1:4], ':') || ':*' else regexp_replace(ip, '[.][0-9]+$', '.x') end p, \"나라\", left(ua, 60) u, count(*) n, sum(case when \"동작\" is not null then 1 else 0 end) act, to_char(min(\"때\"),'MM-DD HH24:MI') f, to_char(max(\"때\"),'MM-DD HH24:MI') t from app.req_log l where \"때\" >= '2026-11-01' and \"때\" < '2026-11-02' and not \"내부\" and \"상태\" < 400 and not exists (select 1 from app.usage_owner_ip o where o.ip = l.ip) and coalesce(ua,'') not like '%sbx-test%' group by 1,2,3 order by 5 desc limit 15"
   ]
 }
