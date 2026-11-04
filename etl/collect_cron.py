@@ -100,53 +100,64 @@ def 따라가기():
     """놓음 · 도는중 인 기록을 실제와 맞춘다"""
     cur = C(); cur.execute("SELECT run_id, 작업, 놓음, 상태 FROM ops.collect_run WHERE 상태 IN (N'놓음', N'도는중') AND 놓음 IS NOT NULL")
     for run_id, job, 놓음, 상태 in cur.fetchall():
-        lg = 로그찾기(job, 놓음)
-        if lg:
-            t0, p = lg
-            txt = open(p, encoding="utf-8", errors="replace").read()
-            m = re.search(r"끝 (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+종료코드 (-?\d+)", txt)
-            if m and not os.path.exists(os.path.join(Q, job + ".job")):
-                rc = int(m.group(2)); 끝 = D.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
-                # 10-31: 창을 닫아 강제 종료된 작업의 종료코드는 3221225786(0xC000013A) — ops.collect_run.종료코드(INT)를 넘어 UPDATE 가 넘침 오류를 내고
-                #   그 뒤 바퀴가 통째로 실패했다(10-30 20:29 ~ 10-31 07:50). 같은 32비트 값을 부호 있는 수로 적는다(-1073741510).
-                if rc > 2147483647: rc -= 4294967296
-                st = "성공" if rc == 0 else "건너뜀" if rc == 3 else "실패"
-                이유 = None
-                if rc != 0:
-                    tail = [l.strip() for l in txt.splitlines() if l.strip() and not l.strip().startswith("끝 ")][-4:]
-                    이유 = (("출처에 새 것 없음 · " if rc == 3 else "") + " / ".join(tail))[:600]
-                쓰기("""UPDATE ops.collect_run SET 상태 = %s, 시작 = %s, 끝 = %s, 종료코드 = %s, 초 = %s, 로그 = %s, 이유 = COALESCE(%s, 이유)
-                        WHERE run_id = %s""", (st, t0, 끝, rc, int((끝 - t0).total_seconds()), os.path.basename(p), 이유, run_id))
-            elif 상태 != "도는중":
-                쓰기("UPDATE ops.collect_run SET 상태 = N'도는중', 시작 = %s, 로그 = %s WHERE run_id = %s", (t0, os.path.basename(p), run_id))
-        elif not os.path.exists(os.path.join(Q, job + ".job")):
-            if D.datetime.now() - 놓음 > D.timedelta(minutes=3):
-                쓰기("UPDATE ops.collect_run SET 상태 = N'실패', 이유 = N'큐에서 사라졌는데 로그가 없음(거절됐을 수 있음 — _queue/rejected 확인)' WHERE run_id = %s", (run_id,))
-        elif D.datetime.now() - 놓음 > D.timedelta(minutes=30):
-            쓰기("UPDATE ops.collect_run SET 이유 = N'30분 넘게 큐에서 기다리는 중(병렬 줄이 꽉 참)' WHERE run_id = %s AND 이유 IS NULL", (run_id,))
+        # ★ 2026-11-04: 줄 하나가 실패해도 나머지 줄과 바퀴는 계속 간다(11-02 처럼 한 줄 때문에 바퀴가 통째로 서지 않게).
+        try: 한줄따라가기(run_id, job, 놓음, 상태)
+        except Exception as e:
+            print(f"[{D.datetime.now():%m-%d %H:%M}] 기록 맞추기 실패 run_id={run_id} {job}: {str(e)[:160]}", flush=True)
+
+def 한줄따라가기(run_id, job, 놓음, 상태):
+    lg = 로그찾기(job, 놓음)
+    if lg:
+        t0, p = lg
+        txt = open(p, encoding="utf-8", errors="replace").read()
+        m = re.search(r"끝 (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+종료코드 (-?\d+)", txt)
+        if m and not os.path.exists(os.path.join(Q, job + ".job")):
+            rc = int(m.group(2)); 끝 = D.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+            # 10-31: 창을 닫아 강제 종료된 작업의 종료코드는 3221225786(0xC000013A) — ops.collect_run.종료코드(INT)를 넘어 UPDATE 가 넘침 오류를 내고
+            #   그 뒤 바퀴가 통째로 실패했다(10-30 20:29 ~ 10-31 07:50). 같은 32비트 값을 부호 있는 수로 적는다(-1073741510).
+            if rc > 2147483647: rc -= 4294967296
+            st = "성공" if rc == 0 else "건너뜀" if rc == 3 else "실패"
+            이유 = None
+            if rc != 0:
+                tail = [l.strip() for l in txt.splitlines() if l.strip() and not l.strip().startswith("끝 ")][-4:]
+                이유 = (("출처에 새 것 없음 · " if rc == 3 else "") + " / ".join(tail))[:600]
+            쓰기("""UPDATE ops.collect_run SET 상태 = %s, 시작 = %s, 끝 = %s, 종료코드 = %s, 초 = %s, 로그 = %s, 이유 = COALESCE(%s, 이유)
+                    WHERE run_id = %s""", (st, t0, 끝, rc, int((끝 - t0).total_seconds()), os.path.basename(p), 이유, run_id))
+        elif 상태 != "도는중":
+            쓰기("UPDATE ops.collect_run SET 상태 = N'도는중', 시작 = %s, 로그 = %s WHERE run_id = %s", (t0, os.path.basename(p), run_id))
+    elif not os.path.exists(os.path.join(Q, job + ".job")):
+        if D.datetime.now() - 놓음 > D.timedelta(minutes=3):
+            쓰기("UPDATE ops.collect_run SET 상태 = N'실패', 이유 = N'큐에서 사라졌는데 로그가 없음(거절됐을 수 있음 — _queue/rejected 확인)' WHERE run_id = %s", (run_id,))
+    elif D.datetime.now() - 놓음 > D.timedelta(minutes=30):
+        쓰기("UPDATE ops.collect_run SET 이유 = N'30분 넘게 큐에서 기다리는 중(병렬 줄이 꽉 참)' WHERE run_id = %s AND 이유 IS NULL", (run_id,))
 
 def 한바퀴(st):
     지금 = D.datetime.now().replace(microsecond=0)
     last = D.datetime.strptime(st["last"], "%Y-%m-%d %H:%M:%S") if st.get("last") else 지금 - D.timedelta(seconds=60)
     끊김 = (지금 - last) > D.timedelta(minutes=5)
-    for sch in 일정읽기():
-        dues = 예정들(sch["주기"], last, 지금)
-        if not dues: continue
-        if 끊김:
-            지난 = [d for d in dues if d < 지금 - D.timedelta(minutes=2)]
-            for d in 지난:
-                기록(sch, d, "못돎", f"예정 시각에 수집 일정 프로그램이 꺼져 있었음(마지막 확인 {last:%m-%d %H:%M} → 다시 켜짐 {지금:%m-%d %H:%M}) — PC 꺼짐 또는 감시기 꺼짐")
-            if 지난 and sch["못돎이면"] == "once":
-                걸기(sch, 지난[-1], 지금)
-            for d in dues:
-                if d not in 지난: 걸기(sch, d, 지금)
-        else:
-            for d in dues: 걸기(sch, d, 지금)
+    for sch in 일정읽기():   # 일정을 못 읽으면(DB 꺼짐) 여기서 나가고 last 는 그대로 — 살아나면 따라잡는다
+        try:
+            dues = 예정들(sch["주기"], last, 지금)
+            if not dues: continue
+            if 끊김:
+                지난 = [d for d in dues if d < 지금 - D.timedelta(minutes=2)]
+                for d in 지난:
+                    기록(sch, d, "못돎", f"예정 시각에 수집 일정 프로그램이 꺼져 있었음(마지막 확인 {last:%m-%d %H:%M} → 다시 켜짐 {지금:%m-%d %H:%M}) — PC 꺼짐 또는 감시기 꺼짐")
+                if 지난 and sch["못돎이면"] == "once":
+                    걸기(sch, 지난[-1], 지금)
+                for d in dues:
+                    if d not in 지난: 걸기(sch, d, 지금)
+            else:
+                for d in dues: 걸기(sch, d, 지금)
+        except Exception as e:
+            print(f"[{D.datetime.now():%m-%d %H:%M}] 일정 걸기 실패 {sch['이름']}: {str(e)[:160]}", flush=True)
+    # ★ 2026-11-04: 걸기가 끝나면 **바로** last 를 옮긴다. 전에는 바퀴 맨 끝에서 옮겨서, 뒤의 따라가기가 실패하면 last 가 멈추고
+    #   같은 예정을 30초마다 다시 걸었다(11-01 22:56 ~ 11-02 08:44 — 못돎 5,043줄 · 행안부 게시판 156번 · 실거래 일정 343번).
+    st["last"] = f"{지금:%Y-%m-%d %H:%M:%S}"; 상태쓰기(st)
     따라가기()
     for sch in 일정읽기():   # 다음 예정 · 확인 시각(화면 '수집 현황' 이 읽는다)
         nx = 예정들(sch["주기"], 지금, 지금 + D.timedelta(days=400))
         쓰기("UPDATE ops.collect_schedule SET 다음 = %s, 확인 = %s WHERE schedule_id = %s", (nx[0] if nx else None, 지금, sch["id"]))
-    st["last"] = f"{지금:%Y-%m-%d %H:%M:%S}"; 상태쓰기(st)
 
 if __name__ == "__main__":
     st = 상태읽기()
