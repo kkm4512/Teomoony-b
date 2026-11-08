@@ -72,18 +72,23 @@ def one(cid, kind):
 def sync_list(ms, pg):
     cur = ms.cursor()
     cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT complex_id, ISNULL(hhld_cnt_sum, 0), sigungu_cd, merged_into FROM gold.complex")
-    rows = cur.fetchall()
+    # ★ 2026-11-08: 650만 줄을 한꺼번에(fetchall) 들지 않고 5천 줄씩 흘려 넣는다(svc_layers 와 같게) — 같은 줄 · 같은 순서, 메모리만 준다(작업 감시기 컨테이너 4GB 안).
+    n = 0
     with pg.cursor() as c:
         c.execute("CREATE TEMP TABLE t_list (LIKE svc.complex_list INCLUDING DEFAULTS) ON COMMIT DROP")
         with c.copy("COPY t_list (complex_id, hhld, sgg_cd, merged_into) FROM STDIN") as cp:
-            for r in rows: cp.write_row((r[0], r[1], (r[2] or None), r[3]))
+            while True:
+                rows = cur.fetchmany(5000)
+                if not rows: break
+                for r in rows: cp.write_row((r[0], r[1], (r[2] or None), r[3]))
+                n += len(rows)
         c.execute("""INSERT INTO svc.complex_list (complex_id, hhld, sgg_cd, merged_into)
                      SELECT complex_id, hhld, sgg_cd, merged_into FROM t_list
                      ON CONFLICT (complex_id) DO UPDATE SET hhld = EXCLUDED.hhld, sgg_cd = EXCLUDED.sgg_cd, merged_into = EXCLUDED.merged_into, updated_at = now()
                      WHERE (svc.complex_list.hhld, svc.complex_list.sgg_cd, svc.complex_list.merged_into) IS DISTINCT FROM (EXCLUDED.hhld, EXCLUDED.sgg_cd, EXCLUDED.merged_into)""")
         c.execute("DELETE FROM svc.complex_list l WHERE NOT EXISTS (SELECT 1 FROM t_list t WHERE t.complex_id = l.complex_id)")
     pg.commit()
-    return len(rows)
+    return n
 
 
 def kinds_for(hhld):
@@ -135,7 +140,8 @@ SELECT c.complex_id, c.complex_nm, c.rep_plat_plc, CAST(c.has_recap AS INT), c.d
 def publish_markers(ms, pg):
     """지도 마커(단지 점 + 최근 3년 최고가) — 통째로 새 표를 만들어 바꿔 끼운다(읽는 쪽은 옛 표 아니면 새 표만 본다)."""
     t = time.time()
-    cur = ms.cursor(); cur.execute(MARKER_SQL); rows = cur.fetchall()
+    cur = ms.cursor(); cur.execute(MARKER_SQL)   # ★ 11-08: 한꺼번에 들지 않고 흘려 넣는다(윈도우에서 한 번에 4.1GB 까지 찼다) — 같은 줄 · 같은 순서
+    n = 0
     with pg.cursor() as c:
         c.execute("DROP TABLE IF EXISTS svc.complex_marker_new")
         c.execute("""CREATE TABLE svc.complex_marker_new (
@@ -143,9 +149,13 @@ def publish_markers(ms, pg):
             centroid_lat double precision, centroid_lng double precision, trade_cnt int, rent_cnt int,
             area_grp int, max_amount text, max_ymd text, max_dealing text, 실거래이름 text, lawd_cd text)""")
         with c.copy("COPY svc.complex_marker_new FROM STDIN") as cp:
-            for r in rows:
-                r = list(r); r[3] = bool(r[3]) if r[3] is not None else None
-                cp.write_row(r)
+            while True:
+                rows = cur.fetchmany(5000)
+                if not rows: break
+                for r in rows:
+                    r = list(r); r[3] = bool(r[3]) if r[3] is not None else None
+                    cp.write_row(r)
+                n += len(rows)
         c.execute("CREATE INDEX ix_marker_new_lnglat ON svc.complex_marker_new (centroid_lng, centroid_lat)")
         c.execute("CREATE INDEX ix_marker_new_ord ON svc.complex_marker_new (dong_cnt DESC, hhld_cnt_sum DESC)")
         c.execute("ANALYZE svc.complex_marker_new")
@@ -199,8 +209,8 @@ def publish_markers(ms, pg):
             pg.rollback(); time.sleep(5)
     else:
         raise RuntimeError("complex_marker: 바꿔 끼우기 잠금을 못 잡음")
-    print(f"  지도 마커 {len(rows):,}곳 · {time.time() - t:.0f}초", flush=True)
-    return len(rows)
+    print(f"  지도 마커 {n:,}곳 · {time.time() - t:.0f}초", flush=True)
+    return n
 
 
 def main():
