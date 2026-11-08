@@ -23,10 +23,15 @@
 #   DB 생성 후에는 바꿀 수 없다. 한글 정렬/비교가 필요하므로 처음부터 지정한다.
 #   (주소 문자열 매칭을 할 거라면 이 설정이 결과를 바꾼다)
 # ============================================================
+# ★ 2026-11-08 사장님 "컨테이너 이름이 deploy 라 알아보기 힘들다" — 묶음(프로젝트) 이름을 teomoony 로.
+#   (전에는 이 파일이 든 폴더 이름 'deploy' 가 그대로 묶음 이름이었다.) DB 저장공간은 옛 이름(deploy_*) 그대로 이어 쓴다 — 아래 volumes.
+#   폴더 붙이기는 TM_ROOT · TM_ROOT_F 가 있으면 그것(컨테이너 안에서 compose 를 돌릴 때 /run/desktop/mnt/host/c/Project/...), 없으면 지금처럼 상대 경로.
+name: teomoony
 services:
   mssql:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: teomoony-mssql
+    stop_grace_period: 120s   # 11-08: 내릴 때 DB 가 깨끗이 닫히도록(기본 10초면 강제 종료 → 켤 때 복구)
     user: "0:0"
     environment:
       ACCEPT_EULA: "Y"
@@ -49,7 +54,7 @@ services:
       - mssql_bak:/var/opt/mssql/backup
       # 대용량 파일 적재용 - EAIS 월배치 / juso 전체분 파일을 여기 두면
       # 컨테이너 안에서 BULK INSERT 로 바로 읽을 수 있다
-      - ./bulk:/bulk
+      - ${TM_ROOT:-..}/deploy/bulk:/bulk
     deploy:
       resources:
         limits:
@@ -72,6 +77,7 @@ services:
   postgis:
     image: postgis/postgis:17-3.5
     container_name: teomoony-svc
+    stop_grace_period: 120s   # 11-08: 내릴 때 DB 가 깨끗이 닫히도록(기본 10초면 강제 종료 → 켤 때 복구)
     environment:
       POSTGRES_DB: teomoony
       POSTGRES_USER: teomoony
@@ -129,8 +135,8 @@ services:
       TM_DOCKER: "1"
       TZ: "Asia/Seoul"
     volumes:
-      - ../../Teomoony-f:/app/Teomoony-f
-      - ..:/app/Teomoony
+      - ${TM_ROOT_F:-../../Teomoony-f}:/app/Teomoony-f
+      - ${TM_ROOT:-..}:/app/Teomoony
     ports:
       - "127.0.0.1:${WEB_PORT:-5173}:5173"
     deploy:
@@ -158,8 +164,8 @@ services:
       TZ: "Asia/Seoul"
       TM_QUEUE: "${RUNNER_QUEUE:-_queue}"
     volumes:
-      - ../../Teomoony-f:/app/Teomoony-f
-      - ..:/app/Teomoony
+      - ${TM_ROOT_F:-../../Teomoony-f}:/app/Teomoony-f
+      - ${TM_ROOT:-..}:/app/Teomoony
       - /var/run/docker.sock:/var/run/docker.sock
     privileged: true
     pid: host
@@ -171,7 +177,16 @@ services:
     restart: unless-stopped
 
 volumes:
+  # ★ 11-08: 묶음 이름을 teomoony 로 바꿔도 **옛 저장공간을 그대로** 쓴다(external · 이름 고정) — 안 그러면 teomoony_mssql_data 라는 빈 DB 가 새로 생긴다.
   svc_data:
+    name: deploy_svc_data
+    external: true
   mssql_data:
+    name: deploy_mssql_data
+    external: true
   mssql_log:
+    name: deploy_mssql_log
+    external: true
   mssql_bak:
+    name: deploy_mssql_bak
+    external: true
