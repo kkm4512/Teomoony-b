@@ -3938,7 +3938,7 @@
     "powershell",
     "-NoProfile",
     "-Command",
-    "git -C ..\\..\\Teomoony-f pull --ff-only origin main; git -C ..\\..\\Teomoony-f log --oneline -3"
+    "$a = git -C ..\\..\\Teomoony-f rev-parse HEAD; git -C ..\\..\\Teomoony-f pull --ff-only origin main; $b = git -C ..\\..\\Teomoony-f rev-parse HEAD; git -C ..\\..\\Teomoony-f log --oneline -3; if ($a -ne $b) { $ch = git -C ..\\..\\Teomoony-f diff --name-only $a $b; if (($ch | Where-Object { $_ -match '^(src/|package)' }) -and (docker ps -q -f name=^teomoony-web$)) { 'web 다시 켬 (src 바뀜)'; docker restart teomoony-web; Start-Sleep 4; docker logs --tail 5 teomoony-web } else { 'web 그대로 (src 안 바뀜 또는 컨테이너 없음)' } }"
   ],
   "zx-export-trades-par": [
     "python",
@@ -4118,5 +4118,29 @@
     "-NoProfile",
     "-Command",
     "docker ps --format '{{.Names}} | {{.Image}} | {{.Status}} | {{.Ports}}'; '--- labels'; docker inspect teomoony-svc --format '{{index .Config.Labels \"com.docker.compose.project\"}} {{index .Config.Labels \"com.docker.compose.project.working_dir\"}} {{json .NetworkSettings.Networks}}'; '--- stats'; docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}'; '--- node'; Get-Process node -ErrorAction SilentlyContinue | Select-Object Id,@{n='MB';e={[int]($_.WorkingSet64/1MB)}},StartTime | Format-Table -AutoSize | Out-String; node -v; docker info --format '{{.MemTotal}} {{.NCPU}}'"
+  ],
+  "zd-web-test-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$env:WEB_PORT='5174'; docker compose --env-file ..\\.env -f ..\\deploy\\docker-compose.yml up -d --no-deps web; Start-Sleep 12; docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; docker logs --tail 40 teomoony-web"
+  ],
+  "zd-web-check-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$u = @('/', '/api/complexes/103835', '/api/complexes/900002528', '/api/search?q=%EB%9E%98%EB%AF%B8%EC%95%88&limit=5', '/api/suggest?q=%EA%B0%95%EB%82%A8%EC%97%AD', '/api/school/B000012179', '/api/redev?bbox=126.9,37.5,127.1,37.6', '/app.js', '/style.css'); $md5 = [Security.Cryptography.MD5]::Create(); foreach ($x in $u) { foreach ($p in 5173, 5174) { try { $t = Measure-Command { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 90 (\"http://localhost:$p\" + $x) }; $h = ([BitConverter]::ToString($md5.ComputeHash($r.RawContentStream.ToArray()))).Replace('-','').Substring(0,10); \"$p $($r.StatusCode) $($r.RawContentLength) $h $([int]$t.TotalMilliseconds)ms $x\" } catch { \"$p ERR $($_.Exception.Message) $x\" } } }; docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' teomoony-web"
+  ],
+  "zd-web-switch-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "$p = Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'src[/\\\\]server\\.js' -or ($_.CommandLine -match 'npm-cli' -and $_.CommandLine -match 'run dev') }; 'stop ' + @($p).Count; $p | ForEach-Object { 'pid ' + $_.ProcessId + ' ' + $_.CommandLine.Substring(0, [Math]::Min(90, $_.CommandLine.Length)); Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep 2; Remove-Item Env:WEB_PORT -ErrorAction SilentlyContinue; docker compose --env-file ..\\.env -f ..\\deploy\\docker-compose.yml up -d --no-deps web; Start-Sleep 10; docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; netstat -ano | Select-String ':5173 ' | Select-String LISTENING; try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 30 'http://localhost:5173/'; 'local ' + $r.StatusCode } catch { 'local ERR ' + $_.Exception.Message }; docker logs --tail 15 teomoony-web"
+  ],
+  "zd-web-logs-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; docker logs --tail 60 teomoony-web"
   ]
 }
