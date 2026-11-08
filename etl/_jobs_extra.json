@@ -4178,5 +4178,20 @@
     "-NoProfile",
     "-Command",
     "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Sort-Object WorkingSetSize -Descending | Select-Object -First 8 | ForEach-Object { '{0,6} MB peak {1,6} MB  {2}' -f [int]($_.WorkingSetSize/1MB), [int]($_.PeakWorkingSetSize/1KB), ($_.CommandLine -replace '^.*?python(\\.exe)?\"?\\s+','') }"
+  ],
+  "cl-svc-heavy-par": [
+    "python",
+    "svc_publish.py",
+    "--heavy"
+  ],
+  "cl-svc-heavy2-par": [
+    "python",
+    "svc_publish.py",
+    "--heavy"
+  ],
+  "zq-407-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\407_schedule_svc_heavy.sql"
   ]
 }

@@ -150,7 +150,11 @@ def build(ms, pg, name, src_sql, cols, idx, post=()):
     return n, time.time() - t
 
 
-def run(ms, pg, force=(), only=()):
+# ★ 2026-11-08 사장님 "새벽 2~5시를 활용" → 무거운 층(줄 수백만 · 매시 수 분 · 디스크 수 GB 들락날락)은 매시 발행에서 빼고
+#   하루 두 번(03:00 · 06:40 실거래 들어온 뒤) svc_publish --heavy 가 만든다. 나머지 층은 그대로 매시(원천이 그대로면 건너뜀).
+HEAVY = ("closed", "sg_cmap", "sg_cmap_s", "sg_atch")
+
+def run(ms, pg, force=(), only=(), skip=()):
     with pg.cursor() as c:
         c.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
         c.execute("CREATE EXTENSION IF NOT EXISTS postgis")
@@ -164,6 +168,7 @@ def run(ms, pg, force=(), only=()):
     for spec in LAYERS:
         name, fp_sql, src, cols, idx = spec[:5]; post = spec[5] if len(spec) > 5 else ()
         if only and name not in only and not any(o.endswith('*') and name.startswith(o[:-1]) for o in only): continue
+        if name in skip: print(f"  층 {name}: 무거운 층 — 새벽(03:00 · 06:40)에 만든다", flush=True); continue
         fp = None
         if fp_sql:
             cur = ms.cursor(); cur.execute(fp_sql); fp = str(cur.fetchone()[0])

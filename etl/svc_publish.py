@@ -228,24 +228,35 @@ def main():
     ap.add_argument("--sample", type=int, default=0, help="full: 무작위 N 단지만(속도 재기)")
     ap.add_argument("--markers", action="store_true", help="지도 마커 표도 다시(hourly 는 늘)")
     ap.add_argument("--markers-only", action="store_true")
+    ap.add_argument("--heavy", action="store_true", help="11-08: 무거운 것만 — 지도 마커 + 큰 층(svc_layers.HEAVY). 하루 두 번(03:00 · 06:40). 매시(hourly)는 이것을 뺀다")
     ap.add_argument("--layers", action="store_true", help="지도 층도(hourly 는 늘)")
     ap.add_argument("--min-hhld", type=int, default=0, help="full: 세대가 이 이상인 단지만(0-1세대 46만 곳은 열릴 때 적재DB 경로)")
     a = ap.parse_args()
     e = env(); ms = ms_conn(e); pg = pg_conn(e)
     t0 = time.time()
-    n_list = sync_list(ms, pg)
+    n_list = 0 if a.heavy else sync_list(ms, pg)   # 11-08: 무거운 발행은 단지 목록을 안 건드린다(매시 발행과 겹쳐 같은 표를 쓰지 않게)
     with pg.cursor() as c:
         c.execute("SELECT max(watermark) FROM svc.publish WHERE status = 'ok' AND kind = 'hourly'"); last_wm = c.fetchone()[0]
         c.execute("SELECT now()"); wm = c.fetchone()[0]
-        c.execute("INSERT INTO svc.publish (kind, watermark, note) VALUES (%s, %s, %s) RETURNING publish_id", (a.mode, wm, f"단지 목록 {n_list:,}"))
+        # ★ 11-08: --heavy 는 kind 'heavy' — 'hourly' 로 적으면 다음 매시 발행이 그 시각까지 상세를 담은 줄 알고 바뀐 단지를 건너뛴다(물감 기준 = 마지막 ok hourly)
+        c.execute("INSERT INTO svc.publish (kind, watermark, note) VALUES (%s, %s, %s) RETURNING publish_id", ("heavy" if a.heavy else a.mode, wm, f"단지 목록 {n_list:,}"))
         pid = c.fetchone()[0]
     pg.commit()
     print(f"[{time.strftime('%H:%M:%S')}] 발행 {pid} · {a.mode} · 단지 목록 {n_list:,}", flush=True)
-    if a.markers or a.markers_only or a.mode == "hourly":
+    if a.heavy:   # 11-08 사장님 "새벽 2~5시 활용": 무거운 것만 — 지도 마커 + 큰 층. 상세는 매시 발행이 맡는다.
+        publish_markers(ms, pg)
+        try:
+            import svc_layers; svc_layers.run(ms, pg, only=set(svc_layers.HEAVY))
+        except Exception as ex:
+            pg.rollback(); print(f"  !! 큰 층 실패: {ex}", flush=True); raise
+        with pg.cursor() as c:
+            c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 무거운 것(마커 · 큰 층)' WHERE publish_id = %s", (pid,))
+        pg.commit(); print(f"끝 무거운 발행 {pid} ok · {time.time() - t0:.0f}초", flush=True); return
+    if a.markers or a.markers_only:   # 11-08: 매시(hourly)는 마커를 다시 만들지 않는다 — --heavy(03:00 · 06:40)
         publish_markers(ms, pg)
     if a.mode == "hourly" or a.layers:   # 10-25 2단계: 지도 층(필지 · 건물 · 법정동 · 행정동 · 닫힌 대장 · 신축) — 원천이 그대로인 층은 건너뜀
         try:
-            import svc_layers; svc_layers.run(ms, pg)
+            import svc_layers; svc_layers.run(ms, pg, skip=set(svc_layers.HEAVY) if not a.layers else ())
         except Exception as ex:
             pg.rollback(); print(f"  !! 지도 층 실패: {ex}", flush=True)
         try:   # 11-01 서비스DB 분리 1묶음: 주소 단위 응답(동네 고르기 · 범위 · 정비구역 상세) — 원천이 그대로인 묶음은 건너뜀
