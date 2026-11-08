@@ -11,6 +11,18 @@ rem  Allowed: go-retry, go, plan, rematch, sql.<name>, stop
 rem  Logs   : ..\logs\job_<timestamp>_<name>.log
 rem ============================================================
 cd /d "%~dp0"
+rem 2026-11-08: the watcher now runs in Docker (container teomoony-runner).
+rem Starting this window as well would run every job TWICE. Refuse if the
+rem container is up. (ASCII only here - cmd reads this file as CP949.)
+for /f %%i in ('docker ps -q -f "name=^teomoony-runner$" 2^>nul') do (
+  echo.
+  echo   The job watcher already runs in Docker: teomoony-runner
+  echo   Do NOT run this window - jobs would run twice. Nothing started.
+  echo   Logs: docker logs -f teomoony-runner
+  echo.
+  pause
+  exit /b 1
+)
 title Teomoony job watcher - keep open
 py _job_runner.py
 :tail
