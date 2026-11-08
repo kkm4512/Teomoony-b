@@ -7,7 +7,7 @@
   "zg-pull-b-par": [
     "sh",
     "-c",
-    "cd /app/Teomoony && git checkout -- etl/_jobs_extra.json && git pull --ff-only origin main; git log --oneline -3"
+    "cd /app/Teomoony && git checkout -- etl/_jobs_extra.json etl/_jobs_linux.json && git pull --ff-only origin main; git log --oneline -3"
   ],
   "zg-pull-f-par": [
     "sh",
