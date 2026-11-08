@@ -1,0 +1,76 @@
+{
+  "_설명": [
+    "2026-11-08 작업 감시기를 컨테이너(teomoony-runner, 리눅스)로 옮기며 — 윈도우용(PowerShell · cmd)으로 적힌 작업 중 계속 쓰는 것의 리눅스판.",
+    "컨테이너의 _job_runner.py 만 이 파일을 읽고, 같은 이름이면 _jobs_extra.json 보다 이것이 이긴다. 윈도우 감시기는 안 읽는다.",
+    "작업 폴더는 /app/Teomoony/etl · PC 폴더는 /app/Teomoony · /app/Teomoony-f · DB 는 127.0.0.1 의 같은 문(컨테이너 안 socat 이 잇는다)."
+  ],
+  "zg-pull-b-par": [
+    "sh",
+    "-c",
+    "cd /app/Teomoony && git checkout -- etl/_jobs_extra.json && git pull --ff-only origin main; git log --oneline -3"
+  ],
+  "zg-pull-f-par": [
+    "sh",
+    "-c",
+    "cd /app/Teomoony-f && a=$(git rev-parse HEAD) && git pull --ff-only origin main; b=$(git rev-parse HEAD); git log --oneline -3; if [ \"$a\" != \"$b\" ]; then if git diff --name-only $a $b | grep -qE '^(src/|package)'; then echo 'web 다시 켬 (src 바뀜)'; docker restart teomoony-web; sleep 4; docker logs --tail 5 teomoony-web; else echo 'web 그대로 (src 안 바뀜)'; fi; fi"
+  ],
+  "zw-restart-web-par": [
+    "sh",
+    "-c",
+    "docker restart teomoony-web; sleep 6; docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; docker logs --tail 8 teomoony-web"
+  ],
+  "zd-web-logs-par": [
+    "sh",
+    "-c",
+    "docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; docker logs --tail 60 teomoony-web"
+  ],
+  "zp-web-par": [
+    "sh",
+    "-c",
+    "curl -s -o /dev/null -w '%{http_code} %{time_total}s\\n' http://localhost:5173/api/health; tail -3 /app/Teomoony/logs/web_life.log"
+  ],
+  "zd-disk": [
+    "sh",
+    "-c",
+    "df -h /app/Teomoony /app/Teomoony-f | sed 's#/app/Teomoony#C:#'"
+  ],
+  "zp-cdisk-par": [
+    "sh",
+    "-c",
+    "df -h /app/Teomoony; docker system df"
+  ],
+  "zp-docker-info-par": [
+    "sh",
+    "-c",
+    "docker ps --format '{{.Names}} | {{.Image}} | {{.Status}} | {{.Ports}}'; echo '--- stats'; docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}'"
+  ],
+  "zk-kill-collect-cron-par": [
+    "sh",
+    "-c",
+    "pgrep -af 'python collect_cron.py' || echo '없음'; pkill -f 'python collect_cron.py' && echo 끔"
+  ],
+  "zp-runner-ps-par": [
+    "sh",
+    "-c",
+    "ps -eo pid,etime,rss,args --sort=-rss | grep -E 'python|socat' | grep -v grep | head -30; free -m"
+  ],
+  "zd-runner-restart": [
+    "sh",
+    "-c",
+    "touch _queue/restart.job; echo '다음 바퀴에 감시기가 코드를 다시 읽는다'"
+  ],
+  "zt-diskguard-once": [
+    "python",
+    "disk_guard.py",
+    "--once",
+    "--stop",
+    "10",
+    "--warn",
+    "60"
+  ],
+  "zt-runner-env-par": [
+    "sh",
+    "-c",
+    "python -V; date; echo TZ=$TZ; git -C /app/Teomoony status -sb | head -5; git -C /app/Teomoony-f status -sb | head -3; git config --global -l; python -c \"import socket\nfor p in (11433,15432,16379,5173):\n  s=socket.socket(); s.settimeout(3)\n  try: s.connect(('127.0.0.1',p)); print(p,'열림')\n  except Exception as e: print(p,'닫힘',e)\"; df -h /app/Teomoony"
+  ]
+}

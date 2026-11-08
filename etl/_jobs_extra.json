@@ -4142,5 +4142,29 @@
     "-NoProfile",
     "-Command",
     "docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; docker logs --tail 60 teomoony-web"
+  ],
+  "zd-runner-build-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker compose --env-file ..\\.env -f ..\\deploy\\docker-compose.yml build runner 2>&1 | Select-Object -Last 25; docker image ls teomoony-runner"
+  ],
+  "zd-runner-test-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "New-Item -ItemType Directory -Force ..\\etl\\_queue_d | Out-Null; $env:RUNNER_QUEUE='_queue_d'; docker compose --env-file ..\\.env -f ..\\deploy\\docker-compose.yml up -d --no-deps runner 2>&1 | Select-Object -Last 8; Start-Sleep 10; docker ps --filter name=teomoony-runner --format '{{.Names}} {{.Status}}'; docker exec teomoony-runner printenv TM_QUEUE; docker logs --tail 30 teomoony-runner"
+  ],
+  "zd-runner-logs-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "docker ps --filter name=teomoony-runner --format '{{.Names}} {{.Status}}'; docker logs --tail 80 teomoony-runner; docker stats --no-stream --format '{{.Name}} {{.MemUsage}} {{.CPUPerc}}' teomoony-runner"
+  ],
+  "zp-gitcfg-par": [
+    "powershell",
+    "-NoProfile",
+    "-Command",
+    "git config --show-origin --get-all core.autocrlf; git -C .. config --show-origin core.autocrlf; git -C ..\\..\\Teomoony-f config --show-origin core.autocrlf; git --version"
   ]
 }

@@ -140,6 +140,36 @@ services:
           cpus: "2"
     restart: unless-stopped
 
+  # ============================================================
+  # 작업 감시기 — watch.cmd(PowerShell 창) → 컨테이너 (2026-11-08 사장님 "ㄱㄱ: 윈도우에 창이 하나도 없게")
+  #   _job_runner.py(작업 큐) · collect_cron.py(수집 일정) · disk_guard.py(디스크) 가 이 안에서 돈다. 큐 · 로그 · 작업 이름은 그대로.
+  #   얻는 것: 창이 없다 · 죽으면 저절로 다시 · 로그인하면 웹과 같이 뜬다.
+  #   잃는 것: PowerShell/cmd 작업은 여기서 안 돈다(etl/_jobs_linux.json 에 리눅스판이 있는 것만) · 윈도우 프로그램(python.exe 등)은 못 본다.
+  #   ★ privileged + pid: host — 디스크 지킴이가 도커 디스크(vhdx)를 fstrim 해 C 로 돌려주려면 도커 VM 쪽에서 돌려야 한다.
+  #   ★ docker.sock — SQL 적용(docker cp/exec teomoony-mssql) · 웹 다시 켜기(docker restart teomoony-web).
+  #   ★ 메모리 4GB 상한 — 도커 VM(15.4GB) 을 적재DB · 서비스DB 와 나눈다. 넘치면 이 안의 작업만 죽고 DB 는 산다.
+  #   시험할 때만 RUNNER_QUEUE=_queue_d 처럼 다른 큐로 띄운다(진짜 큐와 겹쳐 같은 작업을 두 번 돌리지 않게).
+  # ============================================================
+  runner:
+    build: ./runner
+    image: teomoony-runner:1
+    container_name: teomoony-runner
+    environment:
+      TZ: "Asia/Seoul"
+      TM_QUEUE: "${RUNNER_QUEUE:-_queue}"
+    volumes:
+      - ../../Teomoony-f:/app/Teomoony-f
+      - ..:/app/Teomoony
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+    pid: host
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+          cpus: "6"
+    restart: unless-stopped
+
 volumes:
   svc_data:
   mssql_data:

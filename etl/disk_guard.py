@@ -4,19 +4,29 @@
   ★ Docker 디스크 파일(docker_data.vhdx)은 한 번 커지면 줄지 않는다 — 안에서 지운 자리는 다시 쓰지만, C 의 빈 공간은 돌아오지 않는다.
   py disk_guard.py [--stop 25] [--warn 50]
   ★ 10-27: warn 아래로 가면 먼저 fstrim(30분에 한 번) — 그래도 stop 아래면 멈춘다."""
-import argparse, shutil, subprocess, time
-ap = argparse.ArgumentParser(); ap.add_argument("--stop", type=float, default=25); ap.add_argument("--warn", type=float, default=50); a = ap.parse_args()
+import argparse, os, shutil, subprocess, time
+ap = argparse.ArgumentParser(); ap.add_argument("--stop", type=float, default=25); ap.add_argument("--warn", type=float, default=50)
+ap.add_argument("--once", action="store_true", help="한 번만 보고 끝(시험용) — 깎기도 한 번 해 본다")
+a = ap.parse_args()
+# ★ 2026-11-08: 컨테이너(리눅스)에서도 돈다. C 드라이브는 붙인 폴더(/app/Teomoony)로 잰다 — 같은 디스크다.
+LINUX = os.name != "nt"
+DISK = os.environ.get("TM_DISK") or ("/app/Teomoony" if LINUX else "C:\\")
+def 남은GB(): return shutil.disk_usage(DISK).free / 2**30
 HEAVY = "hub_month|load_hub|hub_latest|hub_swap|load_cadastral|nation_lawd|rtms_nation|load_rtms|gold_nation|svc_publish.py --mode full|nm_build"  # gold_nation 은 시군구마다 끝난 기록이 있어 멈춰도 이어 돈다
 last = None
 깎은때 = 0
 def 깎기():
     """2026-10-27: Docker 디스크(vhdx)는 sparse 라 VM 안에서 fstrim 하면 지운 자리가 C 로 돌아온다(관리자 권한 없이 됨 · 12.9GB → 115GB 실측)."""
-    r = subprocess.run(["wsl", "-d", "docker-desktop", "-u", "root", "-e", "sh", "-c", "fstrim -av 2>&1"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+    if LINUX:   # 컨테이너: privileged + pid host 라 도커 VM(1번 프로세스)의 마운트 자리로 들어가 깎는다. VM 에 fstrim 이 없으면 이 컨테이너의 것을 쓴다.
+        r = subprocess.run(["sh", "-c", f"nsenter -t 1 -m -- fstrim -av 2>&1 || nsenter -t 1 -m -- /proc/{os.getpid()}/root/usr/sbin/fstrim -av 2>&1 || nsenter -t 1 -m -- /proc/{os.getpid()}/root/sbin/fstrim -av 2>&1"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+    else:
+        r = subprocess.run(["wsl", "-d", "docker-desktop", "-u", "root", "-e", "sh", "-c", "fstrim -av 2>&1"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
     print(f"   fstrim: {(r.stdout or r.stderr).strip()[:300]}", flush=True)
 print(f"[{time.strftime('%m-%d %H:%M')}] 디스크 지킴이 시작 — {a.stop}GB 아래면 무거운 쓰기를 멈춘다", flush=True)
 while True:
-    free = shutil.disk_usage("C:\\").free / 2**30
+    free = 남은GB()
     lv = "stop" if free < a.stop else "warn" if free < a.warn else "ok"
     if lv != last or lv != "ok" and int(time.time()) % 600 < 60:
         print(f"[{time.strftime('%m-%d %H:%M')}] C 남은 {free:.1f}GB · {lv}", flush=True)
@@ -24,14 +34,24 @@ while True:
         깎은때 = time.time()
         try: 깎기()
         except Exception as e: print(f"   fstrim 실패: {e}", flush=True)
-        free = shutil.disk_usage("C:\\").free / 2**30
+        free = 남은GB()
         lv = "stop" if free < a.stop else "warn" if free < a.warn else "ok"
         print(f"   → C 남은 {free:.1f}GB · {lv}", flush=True)
-    if lv == "stop":
+    if lv == "stop" and LINUX:   # 컨테이너: 같은 컨테이너의 파이썬이라 pkill 로 멈춘다
+        r = subprocess.run(["sh", "-c", f"pgrep -af 'python.*({HEAVY})' | grep -v disk_guard; pkill -f 'python.*({HEAVY})'"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        print(f"   !! 멈춤: {r.stdout.strip()[:600] or '없음'}", flush=True)
+    elif lv == "stop":
         r = subprocess.run(["powershell", "-NoProfile", "-Command",
                             f"$p = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object {{ $_.CommandLine -match '{HEAVY}' }}; "
                             "($p | ForEach-Object { $_.ProcessId.ToString() + ' ' + $_.CommandLine.Substring(0, [math]::Min(80, $_.CommandLine.Length)) }); $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
         print(f"   !! 멈춤: {r.stdout.strip()[:600] or '없음'}", flush=True)
     last = lv
+    if a.once:
+        if lv == "ok":   # 시험: 넉넉해도 깎기가 되는지 한 번 본다
+            try: 깎기()
+            except Exception as e: print(f"   fstrim 실패: {e}", flush=True)
+        print(f"   (한 번만: {DISK} 남은 {남은GB():.1f}GB)", flush=True)
+        break
     time.sleep(60)

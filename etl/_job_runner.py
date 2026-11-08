@@ -26,7 +26,9 @@
 import json, os, re, subprocess, sys, threading, time
 
 HERE   = os.path.dirname(os.path.abspath(__file__))
-QDIR   = os.path.join(HERE, "_queue")
+# ★ 2026-11-08: 컨테이너(리눅스)에서도 돈다(deploy/docker-compose.yml runner). 시험 때는 TM_QUEUE=_queue_d 로 따로 본다.
+QDIR   = os.path.join(HERE, os.environ.get("TM_QUEUE") or "_queue")
+LINUX  = os.name != "nt"
 DONE   = os.path.join(QDIR, "done")
 REJECT = os.path.join(QDIR, "rejected")
 LOGDIR = os.path.abspath(os.path.join(HERE, "..", "logs"))
@@ -392,8 +394,57 @@ def extra_jobs():
         print(f"  (_jobs_extra.json 을 못 읽었다: {e})")
         return {}
 
+LINUXJOBS = os.path.join(HERE, "_jobs_linux.json")
+
+def linux_jobs():
+    """2026-11-08: 컨테이너(리눅스)에서만 쓰는 판. 같은 이름이면 이것이 이긴다(예: zg-pull-b-par 의 git 받기 · 웹 다시 켜기 · 디스크 보기).
+    윈도우 감시기는 이 파일을 안 읽는다."""
+    try:
+        with open(LINUXJOBS, encoding="utf-8") as f:
+            d = json.load(f)
+        return {k: v for k, v in d.items() if not k.startswith("_") and isinstance(v, list) and all(isinstance(x, str) for x in v)}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"  (_jobs_linux.json 을 못 읽었다: {e})")
+        return {}
+
+def to_linux(argv):
+    """2026-11-08: 윈도우용으로 적힌 작업을 리눅스에서 돌릴 모양으로. 못 돌리는 것은 (None, 이유).
+    · py → python · 'C:\\Project\\' → '/app/' · 띄어쓰기 없는 인자의 '\\' → '/'(경로. SQL 같은 긴 글은 띄어쓰기가 있어 안 건드린다)
+    · powershell · cmd · node 는 거절(윈도우 전용 — _jobs_linux.json 에 리눅스판을 적어야 돈다)"""
+    if not argv:
+        return None, "빈 작업"
+    a0 = argv[0]
+    if a0.lower() in ("powershell", "powershell.exe", "pwsh", "cmd", "cmd.exe", "node", "node.exe"):
+        return None, f"윈도우 전용 작업({a0}) — 컨테이너에서는 etl/_jobs_linux.json 에 리눅스판이 있어야 돈다"
+    if a0 == "py":
+        a0 = "python"
+    out = [a0]
+    for x in argv[1:]:
+        y = x
+        if y[:11].lower() == "c:\\project\\":
+            y = "/app/" + y[11:]
+        if "\\" in y and " " not in y:
+            y = y.replace("\\", "/")
+        out.append(y)
+    return out, None
+
 def resolve(name):
     """큐 파일 이름 -> (argv, 설명) 또는 (None, 거절사유)."""
+    argv, what = _resolve(name)
+    if argv is None or not LINUX or argv[0] == "__SQL__":
+        return argv, what
+    lx, why = to_linux(argv)
+    if lx is None:
+        return None, why
+    return lx, what
+
+def _resolve(name):
+    if LINUX:
+        lj = linux_jobs()
+        if name in lj:
+            return lj[name], " ".join(lj[name][1:]) + "   (_jobs_linux.json)"
     if name in JOBS:
         return JOBS[name], " ".join(JOBS[name][1:])
     ex = extra_jobs()

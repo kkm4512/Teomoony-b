@@ -62,7 +62,7 @@ def 기록(sch, 예정, 상태, 이유=None, 놓음=None):
     r = 쓰기("""INSERT INTO ops.collect_run (schedule_id, 이름, 작업, 예정, 놓음, 상태, 이유) OUTPUT inserted.run_id
                 VALUES (%s, %s, %s, %s, %s, %s, %s)""", (sch["id"], sch["이름"], sch["작업"], 예정, 놓음, 상태, 이유))
     return r[0] if r else None
-def C드라이브(): return shutil.disk_usage("C:\\").free / 2**30
+def C드라이브(): return shutil.disk_usage(os.environ.get("TM_DISK") or ("C:\\" if os.name == "nt" else "/app/Teomoony")).free / 2**30   # 11-08 컨테이너도
 # 같은 일을 하는 다른 이름의 작업(손으로 건 것 · 옛 이름)도 겹침으로 본다
 겹침 = {"cl-svc-hourly-par": ("sp-hourly",), "nm-build-par": ("nm-build",), "cl-rtms-recent-par": ("rm-rematch", "rn-rtms", "rtms")}
 def 큐에있음(job):
