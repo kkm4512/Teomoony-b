@@ -228,7 +228,7 @@ def main():
     ap.add_argument("--sample", type=int, default=0, help="full: 무작위 N 단지만(속도 재기)")
     ap.add_argument("--markers", action="store_true", help="지도 마커 표도 다시(hourly 는 늘)")
     ap.add_argument("--markers-only", action="store_true")
-    ap.add_argument("--heavy", action="store_true", help="11-08: 무거운 것만 — 지도 마커 + 큰 층(svc_layers.HEAVY). 하루 두 번(03:00 · 06:40). 매시(hourly)는 이것을 뺀다")
+    ap.add_argument("--heavy", action="store_true", help="11-08: 무거운 것만 — 지도 마커 + 큰 층(svc_layers.HEAVY). 하루 두 번(03:20 · 06:40). 매시(hourly)는 이것을 뺀다")
     ap.add_argument("--layers", action="store_true", help="지도 층도(hourly 는 늘)")
     ap.add_argument("--min-hhld", type=int, default=0, help="full: 세대가 이 이상인 단지만(0-1세대 46만 곳은 열릴 때 적재DB 경로)")
     a = ap.parse_args()
@@ -252,7 +252,7 @@ def main():
         with pg.cursor() as c:
             c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 무거운 것(마커 · 큰 층)' WHERE publish_id = %s", (pid,))
         pg.commit(); print(f"끝 무거운 발행 {pid} ok · {time.time() - t0:.0f}초", flush=True); return
-    if a.markers or a.markers_only:   # 11-08: 매시(hourly)는 마커를 다시 만들지 않는다 — --heavy(03:00 · 06:40)
+    if a.markers or a.markers_only:   # 11-08: 매시(hourly)는 마커를 다시 만들지 않는다 — --heavy(03:20 · 06:40)
         publish_markers(ms, pg)
     if a.mode == "hourly" or a.layers:   # 10-25 2단계: 지도 층(필지 · 건물 · 법정동 · 행정동 · 닫힌 대장 · 신축) — 원천이 그대로인 층은 건너뜀
         try:
