@@ -2074,7 +2074,7 @@
     "powershell",
     "-NoProfile",
     "-Command",
-    "$w = Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match '--watch src/server.js' }; foreach ($p in $w) { $par = $p.ParentProcessId; $kids = Get-CimInstance Win32_Process -Filter \"ParentProcessId=$($p.ProcessId)\"; foreach ($k in $kids) { Stop-Process -Id $k.ProcessId -Force -ErrorAction SilentlyContinue }; Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; $pp = Get-CimInstance Win32_Process -Filter \"ProcessId=$par\"; if ($pp -and $pp.CommandLine -match 'npm-cli.js.*run dev') { Stop-Process -Id $par -Force -ErrorAction SilentlyContinue }; '옛 서버 끔 ' + $p.ProcessId }; Start-Sleep 2; Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','C:\\Project\\Teomoony-f\\restart_web.cmd','/force' -WorkingDirectory 'C:\\Project\\Teomoony-f'; Start-Sleep 25; Get-Content C:\\Project\\Teomoony\\logs\\web_life.log -Tail 2"
+    "docker restart teomoony-web; Start-Sleep 6; docker ps --filter name=teomoony-web --format '{{.Names}} {{.Status}} {{.Ports}}'; docker logs --tail 8 teomoony-web"
   ],
   "zp-node-par": [
     "powershell",
