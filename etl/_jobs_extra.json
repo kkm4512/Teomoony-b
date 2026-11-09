@@ -4193,5 +4193,24 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\407_schedule_svc_heavy.sql"
+  ],
+  "zt-slack-test-par": [
+    "python",
+    "slack.py",
+    "--test"
+  ],
+  "zt-daily-dry-par": [
+    "python",
+    "daily_report.py",
+    "--dry"
+  ],
+  "cl-daily-report-par": [
+    "python",
+    "daily_report.py"
+  ],
+  "zq-408-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\408_schedule_daily_report.sql"
   ]
 }
