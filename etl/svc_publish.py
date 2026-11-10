@@ -13,6 +13,7 @@
 """
 import argparse, gzip, hashlib, json, os, re, sys, threading, time, urllib.request, urllib.error
 from datetime import timezone
+from itertools import chain
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pymssql, psycopg
 
@@ -113,7 +114,9 @@ def changed_ids(ms, since):
                 JOIN gold.complex_pnu cp ON cp.pnu LIKE LEFT(r.scope_key, 5) + CASE WHEN SUBSTRING(r.scope_key, 7, 5) IN ('00000', '') THEN '' ELSE SUBSTRING(r.scope_key, 7, 5) END + '%%'
                WHERE r.status = 'OK' AND r.row_count > 0 AND r.finished_at > @s AND r.scope_key LIKE '[0-9][0-9][0-9][0-9][0-9]%%'
       ) x WHERE x.complex_id IS NOT NULL""", (since,))
-    return [r[0] for r in cur.fetchall()]
+    while rows := cur.fetchmany(5000):
+        for (cid,) in rows:
+            yield cid
 
 
 MARKER_SQL = """SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -213,6 +216,105 @@ def publish_markers(ms, pg):
     return n
 
 
+# 단지 우선순위와 종류 순서를 DB에서 적용하고, 발행할 키만 임시표에 둔다.
+PRIORITY = "COALESCE(l.hhld, 0) DESC, CASE WHEN left(l.sgg_cd, 2) IN ('11','28','41') THEN 0 ELSE 1 END, l.complex_id"
+DETAIL_EXISTS = """EXISTS (SELECT 1 FROM svc.complex_json j
+                           WHERE j.complex_id = l.complex_id AND j.kind = 'detail')"""
+MISSING_KIND = """NOT EXISTS (SELECT 1 FROM svc.complex_json j
+                              WHERE j.complex_id = l.complex_id AND j.kind = k.kind)"""
+
+
+def prepare_work(ms, pg, a, last_wm, wm):
+    with pg.cursor() as c:
+        c.execute("CREATE TEMP TABLE publish_work (seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, complex_id int, kind text)")
+        enqueue = "INSERT INTO publish_work (complex_id, kind) "
+        kinds = """CROSS JOIN LATERAL unnest(
+                     CASE WHEN COALESCE(l.hhld, 0) >= %s THEN %s::text[] ELSE %s::text[] END
+                   ) WITH ORDINALITY AS k(kind, ord)"""
+        defaults = (SMALL_HHLD, ALL_KINDS, SMALL_KINDS)
+        if a.mode == "ids":
+            c.execute("CREATE TEMP TABLE publish_ids (seq bigint GENERATED ALWAYS AS IDENTITY, complex_id int)")
+            with c.copy("COPY publish_ids (complex_id) FROM STDIN") as cp:
+                if a.ids_file:
+                    with open(a.ids_file, encoding="utf-8") as f:
+                        ids = (int(x) for line in f for x in line.split() if x.isdigit())
+                        for cid in chain(a.ids or (), ids):
+                            cp.write_row((cid,))
+                else:
+                    for cid in a.ids or ():
+                        cp.write_row((cid,))
+            chosen = a.kinds.split(",") if a.kinds else None
+            c.execute(enqueue + f"""SELECT i.complex_id, k.kind FROM publish_ids i
+                LEFT JOIN svc.complex_list l ON l.complex_id = i.complex_id AND l.merged_into IS NULL
+                {kinds} ORDER BY i.seq, k.ord""", (SMALL_HHLD, chosen or ALL_KINDS, chosen or SMALL_KINDS))
+        elif a.mode == "dirty":
+            c.execute("""CREATE TABLE IF NOT EXISTS svc.detail_dirty (
+                         complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())""")
+            c.execute("""DELETE FROM svc.detail_dirty d USING svc.complex_json j
+                         WHERE j.complex_id = d.complex_id AND j.kind = 'detail' AND j.updated_at > d.at""")
+            c.execute(f"""DELETE FROM svc.detail_dirty d WHERE d.at <= %s AND NOT EXISTS (
+                SELECT 1 FROM svc.complex_list l WHERE l.complex_id = d.complex_id
+                AND l.merged_into IS NULL AND {DETAIL_EXISTS})""", (wm,))
+            c.execute(enqueue + f"""SELECT l.complex_id, 'detail'
+                FROM svc.detail_dirty d JOIN svc.complex_list l USING (complex_id)
+                WHERE l.merged_into IS NULL AND {DETAIL_EXISTS}
+                ORDER BY CASE WHEN d.why = '마커 실거래 칸 바뀜' THEN 0 ELSE 1 END, {PRIORITY}""")
+        elif a.mode == "full":
+            chosen = a.kinds.split(",") if a.kinds else None
+            missing = "" if a.rebuild else f"AND {MISSING_KIND}"
+            limit = a.limit if not a.sample and a.limit > 0 else None
+            c.execute(enqueue + f"""SELECT l.complex_id, k.kind FROM svc.complex_list l
+                {kinds} WHERE l.merged_into IS NULL AND COALESCE(l.hhld, 0) >= %s {missing}
+                ORDER BY {PRIORITY}, k.ord LIMIT %s""",
+                (SMALL_HHLD, chosen or ALL_KINDS, chosen or SMALL_KINDS, a.min_hhld, limit))
+        else:
+            since = last_wm or wm.replace(hour=0, minute=0, second=0, microsecond=0)
+            c.execute("CREATE TEMP TABLE publish_changed (complex_id int PRIMARY KEY)")
+            with c.copy("COPY publish_changed (complex_id) FROM STDIN") as cp:
+                for cid in changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None)):
+                    cp.write_row((cid,))
+            c.execute("""DELETE FROM svc.resp_cache r USING publish_changed ch
+                         WHERE r.complex_id = ch.complex_id""")
+            c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
+            if c.fetchone()[0]:
+                c.execute(f"""INSERT INTO publish_changed
+                    SELECT l.complex_id FROM svc.detail_dirty d JOIN svc.complex_list l USING (complex_id)
+                    WHERE d.why = '마커 실거래 칸 바뀜' AND l.merged_into IS NULL AND {DETAIL_EXISTS}
+                    ORDER BY {PRIORITY} LIMIT %s ON CONFLICT DO NOTHING""", (a.dirty,))
+            c.execute(enqueue + f"""SELECT l.complex_id, k.kind FROM publish_changed ch
+                JOIN svc.complex_list l USING (complex_id) {kinds}
+                WHERE l.merged_into IS NULL AND {DETAIL_EXISTS}
+                  AND k.kind IN ('detail', 'history', 'usage')
+                ORDER BY {PRIORITY}, k.ord""", defaults)
+            if a.backlog:
+                c.execute(enqueue + f"""SELECT l.complex_id, k.kind FROM svc.complex_list l
+                    {kinds} WHERE l.merged_into IS NULL AND {MISSING_KIND}
+                    ORDER BY {PRIORITY}, k.ord LIMIT %s""", (*defaults, a.backlog))
+        if a.sample:
+            c.execute("""DELETE FROM publish_work WHERE complex_id NOT IN (
+                SELECT complex_id FROM (SELECT DISTINCT complex_id FROM publish_work) ids
+                ORDER BY random() LIMIT %s)""", (a.sample,))
+        c.execute("SELECT count(*) FROM publish_work")
+        total = c.fetchone()[0]
+    pg.commit()
+    return min(total, a.limit) if a.limit else total
+
+
+def work_pages(pg, total):
+    after = 0
+    for offset in range(0, total, 500):
+        with pg.cursor() as c:
+            c.execute("""SELECT w.seq, w.complex_id, w.kind, j.sha FROM publish_work w
+                         LEFT JOIN svc.complex_json j USING (complex_id, kind)
+                         WHERE w.seq > %s ORDER BY w.seq LIMIT %s""", (after, min(500, total - offset)))
+            rows = c.fetchall()
+        pg.commit()  # HTTP 요청을 받는 동안 트랜잭션을 열어 두지 않는다.
+        if not rows:
+            return
+        after = rows[-1][0]
+        yield [(cid, kind, sha) for _, cid, kind, sha in rows]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["full", "hourly", "ids", "dirty"], default="hourly")
@@ -268,89 +370,8 @@ def main():
             c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 마커만' WHERE publish_id = %s", (pid,))
         pg.commit(); return
 
-    # 대상 (단지, 종류) 목록
-    with pg.cursor() as c:
-        c.execute("SELECT complex_id, hhld, sgg_cd FROM svc.complex_list WHERE merged_into IS NULL")
-        info = {r[0]: (r[1], r[2]) for r in c.fetchall()}
-        c.execute("SELECT complex_id, kind FROM svc.complex_json"); have = {(r[0], r[1]) for r in c.fetchall()}
-    pg.commit()   # 같은 이유(아래 적재DB 질의 · 받기 동안 열어 두지 않게)
-    def 순위(cid):   # 세대 많은 단지부터(전국) — 같은 세대 수면 수도권(서울 · 인천 · 경기) 먼저
-        # ★ 10-27 전국 단지 657만: 예전 순서(수도권 전부 → 그 밖)면 수도권 단독 수백만 채가 부산 · 대구 큰 아파트보다 앞섰다
-        h, s = info.get(cid, (0, None)); return (-(h or 0), 0 if (s or '')[:2] in ('11', '28', '41') else 1, cid)
-    want = []
-    if a.mode == "ids":
-        ids = list(a.ids or [])
-        if a.ids_file: ids += [int(x) for x in open(a.ids_file, encoding="utf-8").read().split() if x.strip().isdigit()]
-        want = [(cid, k) for cid in ids for k in (a.kinds.split(",") if a.kinds else kinds_for(info.get(cid, (0,))[0]))]
-    elif a.mode == "dirty":
-        # ★ 10-28 사장님 "너판단으로 ㄱㄱ": '상세 다시' 표를 끝까지 비운다(상가 새 판처럼 많이 쌓인 것) — 실거래 바뀜 먼저 · 그다음 세대 많은 곳.
-        #   이미 담긴 상세만(안 담긴 곳은 열릴 때 적재DB 경로가 지금 값으로 답한다). 하다 끊겨도 받은 만큼 표에서 빠져 다음에 이어 한다.
-        with pg.cursor() as c:
-            c.execute("CREATE TABLE IF NOT EXISTS svc.detail_dirty (complex_id int PRIMARY KEY, why text NOT NULL, at timestamptz NOT NULL DEFAULT now())")
-            # ★ 10-29: 적힌 뒤에 이미 다시 담긴 상세(매시 발행이 같은 단지를 먼저 담은 것)는 받지 않고 표에서만 뺀다 — 같은 상세를 두 번 받지 않게
-            c.execute("""DELETE FROM svc.detail_dirty d USING svc.complex_json j
-                          WHERE j.complex_id = d.complex_id AND j.kind = 'detail' AND j.updated_at > d.at""")
-            print(f"  상세 다시 표 — 적힌 뒤 이미 다시 담긴 {c.rowcount:,}곳은 뺌", flush=True)
-            rows = c.execute("SELECT complex_id, why = '마커 실거래 칸 바뀜' FROM svc.detail_dirty").fetchall()
-        pg.commit()
-        담김 = {cid for cid, k in have if k == "detail"}
-        먼저 = {cid for cid, t in rows if t}
-        ids = sorted([cid for cid, t in rows if cid in info and cid in 담김], key=lambda x: (0 if x in 먼저 else 1, 순위(x)))
-        # ★ 10-30: 받을 수 없는 줄은 표에서 뺀다 — 서비스DB 에 상세가 안 담긴 단지(열면 적재DB 경로가 지금 값으로 답한다) ·
-        #   단지 목록에 없는 단지(묶이거나 빠짐). 안 빼면 표에 영영 남아 매번 '받을 것 0' 으로 끝났다(10-30 18:50 1,916곳).
-        못받음 = [cid for cid, t in rows if not (cid in info and cid in 담김)]
-        if 못받음:
-            with pg.cursor() as c:
-                c.execute("DELETE FROM svc.detail_dirty WHERE complex_id = ANY(%s)", (못받음,))
-            pg.commit()
-            print(f"  상세 다시 표 — 받을 수 없는 {len(못받음):,}곳은 뺌(안 담긴 상세 · 목록에 없는 단지)", flush=True)
-        print(f"  상세 다시 표 {len(rows):,} · 이번에 받을 것 {len(ids):,}(실거래 먼저 {len(먼저 & set(ids)):,})", flush=True)
-        if not ids:
-            with pg.cursor() as c:
-                c.execute("UPDATE svc.publish SET finished_at = now(), status = 'ok', note = note || ' · 상세 다시 표 빔' WHERE publish_id = %s", (pid,))
-            # ★ 10-30: 비울 것이 없는 건 정상 — 0 으로 끝낸다(3 이면 작업 감시기가 '적재 실패' 알림을 보냈다 · 10-30 18:50)
-            pg.commit(); print("  할 일 없음 — 상세 다시 표가 비었습니다", flush=True); sys.exit(0)
-        want = [(cid, "detail") for cid in ids]
-    elif a.mode == "full":
-        for cid in sorted(info, key=순위):
-            if (info[cid][0] or 0) < a.min_hhld: continue
-            for k in (a.kinds.split(",") if a.kinds else kinds_for(info[cid][0])):
-                if a.rebuild or (cid, k) not in have: want.append((cid, k))
-    else:  # hourly
-        since = last_wm or wm.replace(hour=0, minute=0, second=0, microsecond=0)
-        # ★ 10-25: 적재DB 시각은 UTC(컨테이너 SYSDATETIME) · 기준선은 KST — UTC 로 바꿔 넘긴다(전에는 9시간 앞을 기준으로 봐서 바뀐 게 0건이었다)
-        # ★ 이미 서비스DB 에 담긴 단지만 다시 — 안 담긴 곳은 어차피 적재DB 경로가 답하고, 밀린 것(backlog)이 차례로 담는다
-        담김 = {cid for cid, k in have if k == "detail"}
-        ch_all = changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None))
-        ch = [cid for cid in ch_all if cid in info and cid in 담김]
-        # 10-28: '상세 다시' 표(마커 실거래 칸이 바뀐 단지) — 세대 많은 곳부터 a.dirty 개까지. 끝나면 받은 것만 지운다(아래)
-        with pg.cursor() as c:
-            c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
-            dirty = [r[0] for r in c.execute("SELECT complex_id FROM svc.detail_dirty WHERE why = '마커 실거래 칸 바뀜'").fetchall()] if c.fetchone()[0] else []
-        pg.commit()
-        dirty = sorted([cid for cid in dirty if cid in info and cid in 담김], key=순위)[: a.dirty]
-        chs = set(ch); ch += [cid for cid in dirty if cid not in chs]
-        print(f"  상세 다시 표에서 {len(dirty):,}", flush=True)
-        # 지나며 담긴 응답(호 상세 · 주변 지점 · 점포 목록)은 그 단지가 바뀌면 지운다 — 다음 요청 때 옛 경로가 새로 답하고 다시 담긴다
-        with pg.cursor() as c:
-            c.execute("DELETE FROM svc.resp_cache WHERE complex_id = ANY(%s)", (list(ch_all) or [0],))
-            print(f"  지나며 담긴 응답 지움 {c.rowcount:,}", flush=True)
-        pg.commit()
-        want = [(cid, k) for cid in sorted(ch, key=순위) for k in kinds_for(info[cid][0]) if k in ("detail", "history", "usage")]
-        밀림 = [(cid, k) for cid in sorted(info, key=순위) for k in kinds_for(info[cid][0]) if (cid, k) not in have][: a.backlog]
-        print(f"  바뀐 단지 {len(ch):,}(기준 {since}) · 밀린 것 {len(밀림):,} 더", flush=True)
-        want += 밀림
-    if a.sample:
-        import random
-        pick = set(random.sample(sorted({w[0] for w in want}), min(a.sample, len({w[0] for w in want}))))
-        want = [w for w in want if w[0] in pick]
-    if a.limit: want = want[: a.limit]
-    print(f"  받을 것 {len(want):,}", flush=True)
-
-    with pg.cursor() as c:
-        c.execute("SELECT complex_id, kind, sha FROM svc.complex_json WHERE complex_id = ANY(%s)", (list({w[0] for w in want}) or [0],))
-        old = {(r[0], r[1]): r[2] for r in c.fetchall()}
-    pg.commit()   # 10-25: 읽기 뒤 트랜잭션을 닫는다 — 열어 둔 채 받기(수 분)를 하면 서비스DB 가 2분에 끊는다(idle_in_transaction_session_timeout)
+    total = prepare_work(ms, pg, a, last_wm, wm)
+    print(f"  받을 것 {total:,}", flush=True)
     new = chg = same = bad = 0; buf = []; 시간 = {}; 지울 = []
     def 표에서빼기():   # 10-28: 다시 담은 상세는 '상세 다시' 표에서 뺀다 — 이 발행이 시작된 뒤 다시 적힌 것은 남긴다(그건 또 바뀐 것)
         nonlocal 지울
@@ -369,46 +390,54 @@ def main():
                                bytes = EXCLUDED.bytes, publish_id = EXCLUDED.publish_id, updated_at = now()""", buf)
         pg.commit(); buf = []
     끝시각 = t0 + a.minutes * 60 if a.minutes else None
+    n = 0
     with ThreadPoolExecutor(a.workers) as ex:
-        it = iter(want); 진행 = set()
-        def 채우기():
-            while len(진행) < a.workers * 2:
-                try: w = next(it)
-                except StopIteration: return
-                진행.add(ex.submit(one, *w))
-        채우기(); n = 0
-        while 진행:
-            done = next(as_completed(진행)); 진행.discard(done)
-            cid, kind, st, body, dt = done.result(); n += 1
-            시간.setdefault(kind, []).append(dt)
-            if st is not None and kind == "detail": 지울.append(cid)
-            if st is None:
-                bad += 1
-                if bad <= 20: print(f"  !! {cid}/{kind}: {body}", flush=True)
-            else:
-                raw = body.encode("utf-8"); sha = hashlib.sha256(raw).hexdigest()
-                o = old.get((cid, kind))
-                if o == sha: same += 1
+        for page in work_pages(pg, total):
+            old = {(cid, kind): sha for cid, kind, sha in page}
+            it = ((cid, kind) for cid, kind, _ in page)
+            진행 = set()
+            def 채우기():
+                while len(진행) < a.workers * 2:
+                    try: w = next(it)
+                    except StopIteration: return
+                    진행.add(ex.submit(one, *w))
+            채우기()
+            while 진행:
+                done = next(as_completed(진행)); 진행.discard(done)
+                cid, kind, st, body, dt = done.result(); n += 1
+                elapsed, count = 시간.get(kind, (0.0, 0))
+                시간[kind] = (elapsed + dt, count + 1)
+                if st is not None and kind == "detail": 지울.append(cid)
+                if st is None:
+                    bad += 1
+                    if bad <= 20: print(f"  !! {cid}/{kind}: {body}", flush=True)
                 else:
-                    (new if o is None else chg)
-                    if o is None: new += 1
-                    else: chg += 1
-                    buf.append((cid, kind, st, gzip.compress(raw, 6), sha, len(raw), pid))
-                    if len(buf) >= 200: flush()
-            if n % 500 == 0:
-                flush(); 표에서빼기()
-                el = time.time() - t0
-                print(f"  [{time.strftime('%H:%M:%S')}] {n:,}/{len(want):,} · 새 {new:,} · 바뀜 {chg:,} · 같음 {same:,} · 실패 {bad} · {n/el:.1f}건/초", flush=True)
-            if not (끝시각 and time.time() > 끝시각): 채우기()
+                    raw = body.encode("utf-8"); sha = hashlib.sha256(raw).hexdigest()
+                    o = old.get((cid, kind))
+                    if o == sha: same += 1
+                    else:
+                        if o is None: new += 1
+                        else: chg += 1
+                        buf.append((cid, kind, st, gzip.compress(raw, 6), sha, len(raw), pid))
+                        if len(buf) >= 200: flush()
+                if n % 500 == 0:
+                    flush(); 표에서빼기()
+                    el = time.time() - t0
+                    print(f"  [{time.strftime('%H:%M:%S')}] {n:,}/{total:,} · 새 {new:,} · 바뀜 {chg:,} · 같음 {same:,} · 실패 {bad} · {n/el:.1f}건/초", flush=True)
+                if not (끝시각 and time.time() > 끝시각): 채우기()
+            if 끝시각 and time.time() > 끝시각:
+                break
     flush()
     st = "ok" if bad == 0 or bad < max(10, n * 0.01) else "failed"
+    if a.mode == "hourly" and n < total:
+        st = "failed"  # 완료하지 않은 매시 발행의 기준선은 넘기지 않는다.
     표에서빼기()
     with pg.cursor() as c:
         c.execute("""UPDATE svc.publish SET finished_at = now(), status = %s, rows_new = %s, rows_changed = %s, rows_same = %s, rows_failed = %s,
                      note = note || %s WHERE publish_id = %s""",
-                  (st, new, chg, same, bad, f" · 받음 {n:,}/{len(want):,}", pid))
+                  (st, new, chg, same, bad, f" · 받음 {n:,}/{total:,}", pid))
     pg.commit()
-    평균 = " · ".join(f"{k} {sum(v)/len(v):.2f}s" for k, v in 시간.items())
+    평균 = " · ".join(f"{k} {elapsed/count:.2f}s" for k, (elapsed, count) in 시간.items())
     print(f"\n끝 발행 {pid} {st} · 새 {new:,} · 바뀜 {chg:,} · 같음 {same:,} · 실패 {bad} · {time.time()-t0:.0f}초\n  종류별 평균 {평균}", flush=True)
     sys.exit(0 if st == "ok" else 1)
 

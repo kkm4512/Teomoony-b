@@ -30,6 +30,9 @@
 import argparse, hashlib, json, os, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from concurrent.futures import ThreadPoolExecutor
+from itertools import chain
+
+from etl_batch import bounded_map, pnu_targets
 import requests
 import pymssql
 
@@ -230,32 +233,27 @@ def main():
         #   다시 확인하려면 --recheck-none
         if not a.recheck_none:
             q.append("AND NOT EXISTS (SELECT 1 FROM silver.land_char_none n WHERE n.pnu = p.pnu)")
-    q.append("ORDER BY p.pnu")
-    cur.execute(" ".join(q), tuple(prm))
-    pnus = [r[0] for r in cur.fetchall()]
-    if a.limit:
-        pnus = pnus[:a.limit]
-    if not pnus:
-        print("대상 PNU 가 없습니다 (필지가 적재돼 있는지, --skip-loaded 때문인지 확인)")
+    targets = pnu_targets(cur, " ".join(q), prm, 1 if a.probe else (a.limit or 0))
+    first = next(targets, None)
+    if first is None:
+        print("대상 PNU가 없습니다")
         conn.close(); return
 
     if a.probe:
-        rows, err = fetch(key, domain, pnus[0], retries=1)
-        print(f"PNU {pnus[0]} · 받은 행 {len(rows)} · 오류 {err}")
+        rows, err = fetch(key, domain, first, retries=1)
+        print(f"PNU {first} · 받은 행 {len(rows)} · 오류 {err}")
         keep = 연도별최신(rows)
         print(f"연도별 최신만 남기면 {len(keep)}건")
         if rows:
             print(json.dumps(rows[0], ensure_ascii=False, indent=1)[:1200])
         conn.close(); return
 
-    print(f"[{ts()}] 대상 필지 {len(pnus):,}개 · 스레드 {a.workers} "
-          f"(필지 하나당 호출 하나 — 이 API 는 PNU 전용이다)", flush=True)
+    print(f"[{ts()}] 필지 배치 처리 · 스레드 {a.workers}", flush=True)
 
     t0 = time.time()
-    받음 = 넣음 = 바뀜 = 0
-    빈것 = []          # 응답은 왔는데 행이 0 인 것(= 토지특성이 없는 필지. 실패 아님)
+    i = 받음 = 넣음 = 바뀜 = 빈것 = 실패수 = 0
     실패 = []
-    빈새것 = []        # 이번에 '토지특성 없음' 으로 확인한 필지 — silver.land_char_none 에 적어 다음엔 다시 묻지 않는다
+    빈새것 = []
     연속실패 = 0
 
     칸 = ["pnu"] + [c for _, c in F]
@@ -304,18 +302,19 @@ def main():
         return pnu, *fetch(key, domain, pnu)
 
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        for i, (pnu, rows, err) in enumerate(ex.map(일, pnus), 1):
+        for i, (pnu, rows, err) in enumerate(bounded_map(ex, 일, chain((first,), targets), a.workers * 4), 1):
             # ★ 2026-10-24: 진행 줄을 **맨 위**로 — 예전엔 실패 · 빈 필지에서 continue 하느라 500번째가 그런 필지면 한 줄도 안 찍혔다
             if i % 500 == 0:
                 바뀜 += 쓰기()
                 빈쓰기()
                 걸린 = time.time() - t0
                 속도 = i / 걸린 if 걸린 else 0
-                남은 = (len(pnus) - i) / 속도 if 속도 else 0
-                print(f"  [{ts()}] {i:,}/{len(pnus):,} 필지 · 행 {넣음:,} · 빈 필지 {len(빈것):,} · "
-                      f"{속도:.0f}필지/초 · 남은 {남은/60:.0f}분 · 실패 {len(실패):,} · 지금 초당 {조절.rps:.0f} · 막힘 {조절.쉼횟수}번", flush=True)
+                print(f"  [{ts()}] {i:,} 필지 · 행 {넣음:,} · 빈 필지 {빈것:,} · "
+                      f"{속도:.0f}필지/초 · 실패 {실패수:,} · 지금 초당 {조절.rps:.0f} · 막힘 {조절.쉼횟수}번", flush=True)
             if err:
-                실패.append((pnu, err)); 연속실패 += 1
+                실패수 += 1; 연속실패 += 1
+                if len(실패) < 5:
+                    실패.append((pnu, err))
                 if 연속실패 >= a.max_fail:
                     print(f"\n★ 연속 실패 {연속실패}회 — 여기서 멈춥니다.")
                     print(f"  마지막 오류: {err}")
@@ -327,7 +326,7 @@ def main():
             받음 += 1
             keep = 연도별최신(rows)
             if not keep:
-                빈것.append(pnu); 빈새것.append(pnu)
+                빈것 += 1; 빈새것.append(pnu)
                 continue
 
             for r in keep:
@@ -355,12 +354,12 @@ def main():
 
     걸린 = time.time() - t0
     print(f"\n[{ts()}] 끝 — {걸린/60:.1f}분")
-    print(f"  받은 필지 {받음:,} / 대상 {len(pnus):,}")
+    print(f"  받은 필지 {받음:,} / 대상 {i:,}")
     print(f"  넣은 연도행 {넣음:,} (갱신 {바뀜:,})")
     # ★ '토지특성이 없는 필지' 와 '실패' 를 **갈라서** 적는다. 합치면 둘 다 뜻을 잃는다.
-    print(f"  토지특성 없음 {len(빈것):,}건 (실패가 아니다 — 국공유지·도로 등)")
+    print(f"  토지특성 없음 {빈것:,}건 (실패가 아니다 — 국공유지·도로 등)")
     if 실패:
-        print(f"  ★ 실패 {len(실패):,}건 — 앞 5개:")
+        print(f"  ★ 실패 {실패수:,}건 — 앞 5개:")
         for p_, e_ in 실패[:5]:
             print(f"     {p_}  {e_}")
         print("  --skip-loaded 로 다시 돌리면 실패분만 재시도합니다.")

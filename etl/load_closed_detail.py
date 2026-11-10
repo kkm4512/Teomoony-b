@@ -150,12 +150,9 @@ def main():
     t0 = time.monotonic(); 호출 = 0; 멈춤 = None
     for 차례 in a.only:
         for op in a.ops:
-            cur.execute("""SELECT t.pnu, t.sigungu_cd, t.bjdong_cd, t.plat_gb_cd, t.bun, t.ji FROM gold.v_closed_detail_target t
-                            WHERE t.차례 = %s AND NOT EXISTS (SELECT 1 FROM silver.bld_closed_detail_done d WHERE d.pnu = t.pnu AND d.op = %s)
-                            ORDER BY t.pnu""", (차례, op))
-            todo = cur.fetchall()
-            if a.limit: todo = todo[:a.limit]
-            print(f"[차례 {차례} · {op}] 지번 {len(todo):,}", flush=True)
+            print(f"[차례 {차례} · {op}] 지번 배치 처리", flush=True)
+            after = ""
+            attempted = 0
             n = 줄 = 실패 = 0
 
             def job(t):
@@ -163,8 +160,19 @@ def main():
                 except Stop as e: return t, None, ("STOP", str(e))
                 except Exception as e: return t, None, ("ERR", str(e))
             with ThreadPoolExecutor(max_workers=a.workers) as ex:
-                for k0 in range(0, len(todo), 40):
-                    for t, rows, err in ex.map(job, todo[k0:k0 + 40]):
+                while not a.limit or attempted < a.limit:
+                    size = min(40, a.limit - attempted) if a.limit else 40
+                    cur.execute("""SELECT TOP (%s) t.pnu, t.sigungu_cd, t.bjdong_cd, t.plat_gb_cd, t.bun, t.ji
+                                    FROM gold.v_closed_detail_target t
+                                    WHERE t.차례 = %s AND t.pnu > CAST(%s AS CHAR(19))
+                                      AND NOT EXISTS (SELECT 1 FROM silver.bld_closed_detail_done d WHERE d.pnu = t.pnu AND d.op = %s)
+                                    ORDER BY t.pnu""", (size, 차례, after, op))
+                    page = cur.fetchall()
+                    if not page:
+                        break
+                    after = page[-1][0]
+                    attempted += len(page)
+                    for t, rows, err in ex.map(job, page):
                         if err:
                             if err[0] == "STOP": 멈춤 = err[1]; continue
                             실패 += 1
@@ -174,8 +182,8 @@ def main():
                     conn.commit()
                     if 멈춤: break
                     if n and n % 400 < 40:
-                        print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{len(todo):,} 지번 · {줄:,}줄 · 실패 {실패} · 호출 약 {호출:,}", flush=True)
-            print(f"[차례 {차례} · {op}] 끝 {n:,}/{len(todo):,} 지번 · {줄:,}줄 · 실패 {실패}", flush=True)
+                        print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{attempted:,} 지번 · {줄:,}줄 · 실패 {실패} · 호출 약 {호출:,}", flush=True)
+            print(f"[차례 {차례} · {op}] 끝 {n:,}/{attempted:,} 지번 · {줄:,}줄 · 실패 {실패}", flush=True)
             if 멈춤: break
         if 멈춤: break
     print(f"합 호출 약 {호출:,} · {(time.monotonic() - t0) / 60:.1f}분" + (f" · ⏸ 멈춤(한도·키): {멈춤}" if 멈춤 else ""), flush=True)

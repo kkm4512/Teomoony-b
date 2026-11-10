@@ -167,38 +167,41 @@ def rematch(cur, conn, name2code_all):
     매번 끝에 이 패스를 돌려 현재 meta.lawd_code 기준으로 다시 맞춘다.
     (마스킹된 행은 영구히 불가하므로 건드리지 않는다)
     """
-    cur.execute("""SELECT trade_sk, sgg_cd, umd_nm, jibun
-                     FROM silver.rtms_trade
-                    WHERE match_pnu IS NULL
-                      AND jibun_masked = 0
-                      AND match_method <> 'MASKED'""")
-    rows = cur.fetchall()
-    if not rows:
-        return 0, 0
     리있는읍면 = 리있는읍면들(cur)
     fixed = still = 0
-    for sk, sgg, umd, jib in rows:
-        lawd = name2code_all.get((sgg, umd))
-        if lawd and lawd[:8] in 리있는읍면 and lawd.endswith("00"):
-            lawd = None   # ★ 10-27 리 없이 온 읍·면 — 어느 리인지 모른다(고르면 틀린다)
-        m = JIBUN_RE.match(jib or "")
-        if lawd and m:
-            pnu = (f"{lawd}{'2' if m.group(1) else '1'}"
-                   f"{int(m.group(2)):04d}{int(m.group(3) or 0):04d}")
-            cur.execute("""UPDATE silver.rtms_trade
-                              SET match_pnu=%s, match_method='LAWD_JIBUN', match_note=NULL
-                            WHERE trade_sk=%s""", (pnu, sk))
-            fixed += 1
-        else:
-            still += 1
-            cur.execute("""UPDATE silver.rtms_trade
-                              SET match_method=%s,
-                                  match_note=%s
-                            WHERE trade_sk=%s""",
-                        ("NO_LAWD" if not lawd else "NONE",
-                         (f"법정동 '{umd}' 코드 없음" if not lawd
-                          else f"지번 파싱 실패: {jib}"), sk))
-    conn.commit()
+    after = 0
+    while True:
+        cur.execute("""SELECT TOP (1000) trade_sk, sgg_cd, umd_nm, jibun
+                         FROM silver.rtms_trade
+                        WHERE trade_sk > %s AND match_pnu IS NULL
+                          AND jibun_masked = 0 AND match_method <> 'MASKED'
+                        ORDER BY trade_sk""", (after,))
+        rows = cur.fetchall()
+        if not rows:
+            break
+        for sk, sgg, umd, jib in rows:
+            lawd = name2code_all.get((sgg, umd))
+            if lawd and lawd[:8] in 리있는읍면 and lawd.endswith("00"):
+                lawd = None   # ★ 10-27 리 없이 온 읍·면 — 어느 리인지 모른다(고르면 틀린다)
+            m = JIBUN_RE.match(jib or "")
+            if lawd and m:
+                pnu = (f"{lawd}{'2' if m.group(1) else '1'}"
+                       f"{int(m.group(2)):04d}{int(m.group(3) or 0):04d}")
+                cur.execute("""UPDATE silver.rtms_trade
+                                  SET match_pnu=%s, match_method='LAWD_JIBUN', match_note=NULL
+                                WHERE trade_sk=%s""", (pnu, sk))
+                fixed += 1
+            else:
+                still += 1
+                cur.execute("""UPDATE silver.rtms_trade
+                                  SET match_method=%s,
+                                      match_note=%s
+                                WHERE trade_sk=%s""",
+                            ("NO_LAWD" if not lawd else "NONE",
+                             (f"법정동 '{umd}' 코드 없음" if not lawd
+                              else f"지번 파싱 실패: {jib}"), sk))
+        conn.commit()
+        after = rows[-1][0]
     return fixed, still
 
 

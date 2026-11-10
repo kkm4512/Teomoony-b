@@ -9,6 +9,7 @@
 ★ 400 · 404 도 원 서버가 그렇게 답한 것이라 그대로 담는다. 5xx · 끊김은 담지 않는다(옛 값을 남김)."""
 import argparse, gzip, hashlib, json, sys, time, urllib.parse, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
+from etl_batch import bounded_map
 from svc_publish import env, ms_conn, pg_conn, WEB
 
 U = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n"
@@ -118,15 +119,39 @@ def run_set(ms, pg, name, fp_sql, key_sql, workers, force, opt=None):
         cur = ms.cursor(); cur.execute(fp_sql); fp = str(cur.fetchone()[0])
         if r and r[0] == fp and not force:
             print(f"  {name}: 원천 그대로 — 건너뜀", flush=True); return
-    cur = ms.cursor(); cur.execute(key_sql)
-    while cur.description is None and cur.nextset(): pass
-    urls = sorted({row[0] for row in cur.fetchall() if row[0]})
     본보기 = None
     if opt.get("wild"):   # 빈 응답 본보기 — 목록 밖 아무 하나를 받아 '*' 키로 담는다(목록이 다 담겼을 때만 — 아래)
         cur = ms.cursor(); cur.execute(opt["wild"])
         while cur.description is None and cur.nextset(): pass
         x = cur.fetchone(); 본보기 = x[0] if x else None
-    t = time.time(); 담음 = 실패 = 0; 키들 = set()
+    cur = ms.cursor(); cur.execute(key_sql)
+    while cur.description is None and cur.nextset(): pass
+    with pg.cursor() as c:
+        c.execute("DROP TABLE IF EXISTS pg_temp.pub_url_source, pg_temp.pub_urls, pg_temp.pub_url_keys")
+        c.execute('CREATE TEMP TABLE pub_url_source (url text COLLATE "C") ON COMMIT DROP')
+        with c.copy("COPY pub_url_source FROM STDIN") as cp:
+            while rows := cur.fetchmany(5000):
+                for row in rows:
+                    if row[0]:
+                        cp.write_row((row[0],))
+        c.execute("CREATE TEMP TABLE pub_urls AS SELECT DISTINCT url FROM pub_url_source")
+        c.execute("ALTER TABLE pub_urls ADD PRIMARY KEY (url)")
+        c.execute("CREATE TEMP TABLE pub_url_keys (url text PRIMARY KEY)")
+    pg.commit()
+    t = time.time(); 담음 = 실패 = 주소수 = 0
+
+    def 주소들():
+        after = ""
+        while True:
+            with pg.cursor() as c:
+                c.execute("SELECT url FROM pub_urls WHERE url > %s ORDER BY url LIMIT 500", (after,))
+                page = c.fetchall()
+            pg.commit()
+            if not page:
+                return
+            after = page[-1][0]
+            for (u,) in page:
+                yield u
 
     def 하나(u):
         st, body = 받기(u)
@@ -142,6 +167,7 @@ def run_set(ms, pg, name, fp_sql, key_sql, workers, force, opt=None):
     def 담기(k, st, body):
         gz = gzip.compress(body, 6)
         with pg.cursor() as c:
+            c.execute("INSERT INTO pub_url_keys VALUES (%s) ON CONFLICT DO NOTHING", (k,))
             c.execute("""INSERT INTO svc.resp_pub (url, set_name, status, body_gz, sha, bytes, at) VALUES (%s, %s, %s, %s, %s, %s, now())
                          ON CONFLICT (url) DO UPDATE SET set_name = EXCLUDED.set_name, status = EXCLUDED.status, body_gz = EXCLUDED.body_gz,
                                                          sha = EXCLUDED.sha, bytes = EXCLUDED.bytes,
@@ -157,36 +183,38 @@ def run_set(ms, pg, name, fp_sql, key_sql, workers, force, opt=None):
         except Exception:
             return False
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        for u, st, body, 더 in ex.map(하나, urls):
-            k = 키(u); 키들.add(k)
+        for u, st, body, 더 in bounded_map(ex, 하나, 주소들(), workers * 4):
+            주소수 += 1
+            k = 키(u)
             if not 쓸만(st, body): 실패 += 1; continue
             if 더:
-                if 쓸만(더[1], 더[2]): 키들.add(키(더[0])); 담기(키(더[0]), 더[1], 더[2])
+                if 쓸만(더[1], 더[2]): 담기(키(더[0]), 더[1], 더[2])
                 else: 실패 += 1
             담기(k, st, body); 담음 += 1
-            if 담음 % 5000 == 0: print(f"    {name}: {담음:,} / {len(urls):,} · {time.time() - t:.0f}초", flush=True)
+            if 담음 % 5000 == 0: print(f"    {name}: {담음:,} · {time.time() - t:.0f}초", flush=True)
     if 본보기 and not 실패:
         st, body = 받기(본보기)
         if 쓸만(st, body):
             from urllib.parse import urlsplit, parse_qsl
             q = parse_qsl(urlsplit(본보기).query)
             wk = urlsplit(본보기).path + "?" + q[0][0] + "=*"
-            키들.add(wk); 담기(wk, st, body)
+            담기(wk, st, body)
         else: 실패 += 1
     지움 = 0
     if not 실패:   # 다 받았을 때만 옛 주소를 지운다(일부 실패면 옛 값을 남긴다)
         with pg.cursor() as c:
-            c.execute("SELECT url FROM svc.resp_pub WHERE set_name = %s", (name,))
-            옛 = [x[0] for x in c.fetchall() if x[0] not in 키들]
-            if 옛: c.execute("DELETE FROM svc.resp_pub WHERE url = ANY(%s)", (옛,)); 지움 = len(옛)
+            c.execute("""DELETE FROM svc.resp_pub p WHERE p.set_name = %s
+                         AND NOT EXISTS (SELECT 1 FROM pub_url_keys k WHERE k.url = p.url)""", (name,))
+            지움 = c.rowcount
         pg.commit()
     with pg.cursor() as c:
         c.execute("""INSERT INTO svc.pub_state VALUES (%s, %s, %s, %s, now(), %s)
                      ON CONFLICT (name) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, urls = EXCLUDED.urls, failed = EXCLUDED.failed,
                                                       built_at = EXCLUDED.built_at, secs = EXCLUDED.secs""",
-                  (name, fp if not 실패 else None, len(urls), 실패, time.time() - t))
+                  (name, fp if not 실패 else None, 주소수, 실패, time.time() - t))
+        c.execute("DROP TABLE pub_urls, pub_url_keys")
     pg.commit()
-    print(f"  {name}: 주소 {len(urls):,} · 담음 {담음:,} · 실패 {실패:,} · 지움 {지움:,} · {time.time() - t:.0f}초", flush=True)
+    print(f"  {name}: 주소 {주소수:,} · 담음 {담음:,} · 실패 {실패:,} · 지움 {지움:,} · {time.time() - t:.0f}초", flush=True)
 
 
 def run(ms, pg, only=(), force=(), heavy=False):

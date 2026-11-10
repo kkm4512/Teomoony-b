@@ -105,13 +105,21 @@ def main():
         print(f"[hist-probe {a.what}] {len(ks)}개 다시 물음(hstryYn=Y) · {셈}", flush=True); return
     if not KEY: sys.exit(".env 의 JUSO_KEY 가 비어 있습니다")
     conn = connect(); cur = conn.cursor()
-    cur.execute(ASK[a.what]); todo = [r[0] for r in cur.fetchall() if r[0]]
-    if a.limit: todo = todo[:a.limit]
-    print(f"[{a.what}] 물을 주소 {len(todo):,}", flush=True)
+    print(f"[{a.what}] 주소 배치 처리", flush=True)
+    after = ""
+    attempted = 0
     t0 = time.monotonic(); n = 0; 결과 = {"0건": 0, "1건": 0, "여럿": 0}; 실패 = 0; 멈춤 = None
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        for k0 in range(0, len(todo), 30):
-            묶음 = todo[k0:k0 + 30]
+        while not a.limit or attempted < a.limit:
+            size = min(30, a.limit - attempted) if a.limit else 30
+            cur.execute(f"""SELECT TOP (%s) x.keyword FROM ({ASK[a.what]}) x
+                           WHERE x.keyword > CAST(%s AS NVARCHAR(300))
+                           ORDER BY x.keyword""", (size, after))
+            묶음 = [row[0] for row in cur.fetchall()]
+            if not 묶음:
+                break
+            after = 묶음[-1]
+            attempted += len(묶음)
             for kw, r in zip(묶음, ex.map(lambda k: _try(k), 묶음)):
                 if isinstance(r, Exception):
                     실패 += 1
@@ -126,9 +134,9 @@ def main():
             conn.commit()
             if 멈춤: break
             if n and n % 300 < 30:
-                print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{len(todo):,} · {결과} · 실패 {실패}", flush=True)
+                print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{attempted:,} · {결과} · 실패 {실패}", flush=True)
     cur.execute("EXEC meta.usp_road_code_from_juso"); 도로 = cur.fetchone(); conn.commit()
-    print(f"[{a.what}] 끝 {n:,}/{len(todo):,} · {결과} · 실패 {실패} · 도로명 마스터 {도로[0] if 도로 else '?'}개"
+    print(f"[{a.what}] 끝 {n:,}/{attempted:,} · {결과} · 실패 {실패} · 도로명 마스터 {도로[0] if 도로 else '?'}개"
           + (f" · ⏸ 멈춤: {멈춤}" if 멈춤 else ""), flush=True)
 
 

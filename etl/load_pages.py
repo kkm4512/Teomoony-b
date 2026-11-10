@@ -25,7 +25,9 @@
   py load_pages.py --op getBrHsprcInfo --sgg 41173 --bjdong 10100 --workers 10
 """
 import argparse, json, os, subprocess, sys, threading, time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
+
+from etl_batch import bounded_map
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -185,53 +187,41 @@ def main():
             모름.append((sgg, bjd, nm))
     if 모름:
         print(f"[{ts()}] totalCount 를 모르는 {len(모름)}곳 — 1페이지만 먼저 받습니다")
+        def 첫쪽(unit):
+            s, b, n = unit
+            ok2, _ = run_ingest(a.op, s, b, 1, 1, a.config)
+            return s, b, n, ok2
+
         with ThreadPoolExecutor(max_workers=min(a.workers, len(모름))) as ex:
-            futs = {ex.submit(run_ingest, a.op, s, b, 1, 1, a.config): (s, b, n)
-                    for s, b, n in 모름}
-            for f in as_completed(futs):
-                s, b, n = futs[f]
-                ok2, tail = f.result()
+            for s, b, n, ok2 in bounded_map(ex, 첫쪽, 모름, a.workers * 4):
                 print(f"  [{ts()}] {'OK' if ok2 else '!!'} {s}/{b} {n or ''} 1쪽")
 
-    # ---- 2) 안 받은 페이지를 구간으로 묶는다 ----
-    일감 = []
-    요약 = []
-    for sgg, bjd, nm in units:
-        ok, tot = got_pages(cur, sgg, bjd, a.op)
-        if tot is None:
-            요약.append((sgg, bjd, nm, None, 0, 0))
-            continue
-        전체쪽 = max(1, -(-int(tot) // ROWS))      # 올림
-        남은 = [p for p in range(1, 전체쪽 + 1) if p not in ok]
-        요약.append((sgg, bjd, nm, tot, 전체쪽, len(남은)))
-        # 이어진 번호끼리 묶고, 묶음이 너무 길면 chunk 로 자른다
-        run = []
-        for p in 남은:
-            if run and p == run[-1] + 1 and len(run) < a.chunk:
-                run.append(p)
-            else:
-                if run:
-                    일감.append((sgg, bjd, run[0], run[-1]))
-                run = [p]
-        if run:
-            일감.append((sgg, bjd, run[0], run[-1]))
+    def 계획():
+        print(f"\n[{ts()}] 받을 것")
+        for sgg, bjd, nm in units:
+            ok, tot = got_pages(cur, sgg, bjd, a.op)
+            if tot is None:
+                print(f"  {sgg}/{bjd} {nm or '':<8} totalCount 모름 — 건너뜀")
+                continue
+            전체쪽 = max(1, -(-int(tot) // ROWS))
+            frm = to = None
+            남은 = 0
+            for page in range(1, 전체쪽 + 1):
+                if page in ok:
+                    continue
+                남은 += 1
+                if frm is not None and (page != to + 1 or page - frm >= a.chunk):
+                    yield sgg, bjd, frm, to
+                    frm = None
+                if frm is None:
+                    frm = page
+                to = page
+            if frm is not None:
+                yield sgg, bjd, frm, to
+            print(f"  {sgg}/{bjd} {nm or '':<8} 전체 {전체쪽:,}쪽 (건수 {int(tot):,}) · 남은 {남은:,}쪽")
 
-    print(f"\n[{ts()}] 받을 것")
-    for sgg, bjd, nm, tot, 전체, 남 in 요약:
-        if tot is None:
-            print(f"  {sgg}/{bjd} {nm or '':<8} totalCount 모름 — 건너뜀")
-        else:
-            print(f"  {sgg}/{bjd} {nm or '':<8} 전체 {전체:,}쪽 "
-                  f"(건수 {int(tot):,}) · 남은 {남:,}쪽")
-    print(f"  -> 작업 {len(일감):,}개\n")
     if a.dry_run:
-        return
-    if not 일감:
-        # ★ 받을 게 없어도 **구멍 보고서는 찍는다**(2026-10-20). 전에는 그냥
-        #   return 해서 체인 요약에 '구멍 ?' 가 떴다 - 다 됐다는 뜻인데
-        #   모른다는 뜻으로 보였다. 둘은 다르다.
-        print(f"\n[{ts()}] 받을 것이 없습니다 (이미 다 받았습니다)")
-        구멍보고(cur, a)
+        print(f"  -> 작업 {sum(1 for _ in 계획()):,}개")
         conn.close()
         return
 
@@ -251,7 +241,7 @@ def main():
             if not ok2:
                 done["bad"] += 1
             print(f"  [{ts()}] {'OK' if ok2 else '!!'} "
-                  f"[{done['n']}/{len(일감)}] {sgg}/{bjd} p{frm}~{to} "
+                  f"[{done['n']:,}] {sgg}/{bjd} p{frm}~{to} "
                   f"{hms(time.time()-st)}  (전체 {hms(time.time()-t0)})")
             if not ok2:
                 for ln in tail:
@@ -259,7 +249,8 @@ def main():
         return ok2
 
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        list(ex.map(one, 일감))
+        jobs = sum(1 for _ in bounded_map(ex, one, 계획(), a.workers * 4))
+    print(f"  -> 작업 {jobs:,}개")
 
     구멍보고(cur, a, t0, done['bad'])
     conn.close()

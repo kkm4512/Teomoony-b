@@ -12,6 +12,8 @@
 import argparse, io, json, os, sys, time, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from etl_batch import pnu_targets
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV = os.path.join(HERE, "..", ".env")
 URL = "https://api.vworld.kr/ned/data/getLandMoveAttr"
@@ -105,11 +107,12 @@ def main():
     a = ap.parse_args()
     if not KEY: sys.exit(".env 의 VWORLD_KEY 가 비어 있습니다")
     conn = connect(); cur = conn.cursor()
-    cur.execute("SELECT pnu FROM silver.land_move_done"); done = {r[0] for r in cur.fetchall()}
-    t0 = time.monotonic(); 합 = 0; 실패 = []
+    t0 = time.monotonic(); 합 = 실패 = 0
     for 차례 in a.only:
-        cur.execute(TARGET[차례]); todo = [r[0] for r in cur.fetchall() if r[0] and r[0] not in done]
-        print(f"[차례 {차례}] 받을 필지 {len(todo):,} (이미 받은 {len(done):,} 제외)", flush=True)
+        source = f"""SELECT x.pnu FROM ({TARGET[차례]}) AS x
+                     WHERE NOT EXISTS (SELECT 1 FROM silver.land_move_done d WHERE d.pnu = x.pnu)"""
+        todo = pnu_targets(cur, source)
+        print(f"[차례 {차례}] 필지 배치 처리", flush=True)
         n = 0; 이력 = 0
         with ThreadPoolExecutor(max_workers=a.workers) as ex:
             futs = {}
@@ -123,22 +126,22 @@ def main():
                 for f in as_completed(list(futs)):
                     p = futs.pop(f)
                     try:
-                        rows = f.result(); write(cur, p, rows, 차례); done.add(p); n += 1; 이력 += len(rows)
+                        rows = f.result(); write(cur, p, rows, 차례); n += 1; 이력 += len(rows)
                     except Exception as e:
-                        실패.append(p)
-                        if len(실패) <= 20: print(f"  ! {p}: {str(e)[:120]}", flush=True)
+                        실패 += 1
+                        if 실패 <= 20: print(f"  ! {p}: {str(e)[:120]}", flush=True)
                     if n % 200 == 0: conn.commit()
                     if n and n % 2000 == 0:
                         m = (time.monotonic() - t0) / 60
-                        print(f"  [{m:.1f}분] 차례 {차례}: {n:,}/{len(todo):,} 필지 · 이력 {이력:,} · 실패 {len(실패)}", flush=True)
+                        print(f"  [{m:.1f}분] 차례 {차례}: {n:,} 필지 · 이력 {이력:,} · 실패 {실패}", flush=True)
                     break
                 채우기()
                 if a.max_min and (time.monotonic() - t0) / 60 > a.max_min:
                     print(f"  ⏸ {a.max_min}분 넘어 멈춤 — 다음에 이어받기", flush=True); futs.clear(); break
         conn.commit(); 합 += n
-        print(f"[차례 {차례}] 끝 {n:,}/{len(todo):,} 필지 · 이력 {이력:,}", flush=True)
+        print(f"[차례 {차례}] 끝 {n:,} 필지 · 이력 {이력:,}", flush=True)
         if a.max_min and (time.monotonic() - t0) / 60 > a.max_min: break
-    print(f"합 {합:,} 필지 · 실패 {len(실패):,} (다시 돌리면 실패분만 이어받음) · {(time.monotonic() - t0) / 60:.1f}분", flush=True)
+    print(f"합 {합:,} 필지 · 실패 {실패:,} (다시 돌리면 실패분만 이어받음) · {(time.monotonic() - t0) / 60:.1f}분", flush=True)
     conn.close()
 
 

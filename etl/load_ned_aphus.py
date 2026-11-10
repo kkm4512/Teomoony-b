@@ -7,6 +7,10 @@
 """
 import argparse, io, json, os, sys, time, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import chain
+
+from etl_batch import pnu_targets
+
 HERE = os.path.dirname(os.path.abspath(__file__)); ENV = os.path.join(HERE, "..", ".env")
 URL = "https://api.vworld.kr/ned/data/getApartHousingPriceAttr"
 
@@ -63,16 +67,18 @@ def main():
                            password=E.get("DB_PASSWORD", ""), database=E.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
     cur = conn.cursor()
     if a.target == "closed":
-        cur.execute("""SELECT t.pnu FROM gold.v_closed_detail_target t
-                        WHERE NOT EXISTS (SELECT 1 FROM silver.ned_aphus_done d WHERE d.pnu = t.pnu) ORDER BY t.차례, t.pnu""")
+        source = """SELECT t.pnu FROM gold.v_closed_detail_target t
+                     WHERE t.차례 = %s
+                       AND NOT EXISTS (SELECT 1 FROM silver.ned_aphus_done d WHERE d.pnu = t.pnu)"""
+        todo = chain(pnu_targets(cur, source, (1,)), pnu_targets(cur, source, (2,)))
     else:
-      cur.execute("""SELECT DISTINCT e.pnu FROM silver.bld_expos e
+        source = """SELECT e.pnu FROM silver.bld_expos e
                     JOIN silver.bld_expos_pubuse_area x ON x.mgm_bldrgst_pk = e.mgm_bldrgst_pk AND x.is_current = 1
                      AND x.expos_pubuse_gb_cd = '1' AND x.main_purps_cd IN ('02002', '02003')
-                   WHERE e.is_current = 1 AND e.pnu IS NOT NULL AND LEFT(e.pnu, 5) IN (SELECT sgg_cd FROM meta.v_target_sgg)   -- 2026-10-24: 적재 대상 시군구
-                     AND NOT EXISTS (SELECT 1 FROM silver.ned_aphus_done d WHERE d.pnu = e.pnu)""")
-    todo = [r[0] for r in cur.fetchall()]
-    print(f"받을 필지 {len(todo):,}", flush=True)
+                   WHERE e.is_current = 1 AND e.pnu IS NOT NULL AND LEFT(e.pnu, 5) IN (SELECT sgg_cd FROM meta.v_target_sgg)
+                     AND NOT EXISTS (SELECT 1 FROM silver.ned_aphus_done d WHERE d.pnu = e.pnu)"""
+        todo = pnu_targets(cur, source)
+    print("필지 배치 처리", flush=True)
     t0 = time.monotonic(); n = 0; 행 = 0; 실패 = 0
     # ★ 2026-10-23: 키 칸을 표의 형(CHAR · VARCHAR)으로 바꿔 넘긴다 — N'..'(nvarchar) 그대로면 PK 를 못 타고 표를 훑었다(한 줄 MERGE 에 읽기 20만 · 5분에 34줄).
     SQL = """MERGE silver.ned_aphus_price AS t USING (SELECT CAST(%s AS CHAR(19)) pnu, CAST(%s AS VARCHAR(20)) 공동주택코드, %s 동명, %s 호명, CAST(%s AS CHAR(4)) 기준연도, CAST(%s AS CHAR(2)) 기준월) k
@@ -110,12 +116,12 @@ def main():
                 if 실패 <= 20: print(f"  ! {p}: {str(e)[:120]}", flush=True)
             conn.commit()   # 2026-10-23: 필지마다 저장 — 100필지씩 묶으면 잠금이 표 전체로 커져 단지 상세가 1분씩 기다렸다(11-226)
             if n and n % 1000 == 0:
-                print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{len(todo):,} 필지 · 행 {행:,} · 실패 {실패}", flush=True)
+                print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,} 필지 · 행 {행:,} · 실패 {실패}", flush=True)
             if a.max_min and (time.monotonic() - t0) / 60 > a.max_min:
                 print(f"  ⏸ {a.max_min}분 — 멈춤(이어받기)", flush=True); break
             채우기()
     conn.commit(); conn.close()
-    print(f"끝 {n:,}/{len(todo):,} 필지 · 행 {행:,} · 실패 {실패} · {(time.monotonic() - t0) / 60:.1f}분", flush=True)
+    print(f"끝 {n:,} 필지 · 행 {행:,} · 실패 {실패} · {(time.monotonic() - t0) / 60:.1f}분", flush=True)
 
 
 if __name__ == "__main__":

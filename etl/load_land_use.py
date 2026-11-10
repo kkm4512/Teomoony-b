@@ -15,6 +15,8 @@
 import argparse, io, json, os, sys, threading, time
 import urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
+
+from etl_batch import bounded_map, pnu_targets
 import pymssql
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,19 +52,16 @@ def main():
         return pymssql.connect(server=e.get("DB_HOST", "127.0.0.1"), port=int(e.get("DB_PORT", 11433)),
                                user=e.get("DB_USER", "sa"), password=e.get("DB_PASSWORD", ""),
                                database=e.get("DB_NAME", "Teomoony"), charset="UTF-8", autocommit=False)
-    c0 = conn(); cur = c0.cursor()
+    c0 = conn(); c0.autocommit(True); cur = c0.cursor()
     대상 = ("SELECT DISTINCT cp.pnu FROM gold.complex_pnu cp JOIN gold.complex c ON c.complex_id = cp.complex_id "
            "WHERE c.merged_into IS NULL" if a.all_complex_pnu else
            "SELECT DISTINCT c.rep_pnu FROM gold.complex c WHERE c.merged_into IS NULL AND c.rep_pnu IS NOT NULL "
            f"AND c.hhld_cnt_sum >= {max(1, int(a.min_hhld))}")
     덜 = ("AND NOT EXISTS (SELECT 1 FROM silver.land_use_done d WHERE d.pnu = x.pnu"
          + (f" AND d.받은시각 > DATEADD(DAY, -{int(a.refresh_days)}, SYSDATETIME())" if a.refresh_days else "") + ")")
-    cur.execute(f"SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT x.pnu FROM ({대상}) x(pnu) WHERE x.pnu IS NOT NULL {덜} ORDER BY x.pnu")
-    pnus = [r[0] for r in cur.fetchall()]
-    if a.limit: pnus = pnus[:a.limit]
-    c0.close()
-    print(f"대상 필지 {len(pnus):,} ({'단지의 모든 필지' if a.all_complex_pnu else f'세대 {a.min_hhld} 이상 단지의 대표 필지'}) · 스레드 {a.workers}", flush=True)
-    if not pnus: return
+    cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
+    targets = pnu_targets(cur, f"SELECT x.pnu FROM ({대상}) x(pnu) WHERE x.pnu IS NOT NULL {덜}", limit=a.limit)
+    print(f"필지 배치 처리 · 스레드 {a.workers}", flush=True)
 
     lock = threading.Lock(); st = {"n": 0, "rows": 0, "fail": 0, "연속": 0, "t0": time.monotonic()}
     local = threading.local()
@@ -122,13 +121,15 @@ def main():
             st["n"] += 1; st["rows"] += len(rows); st["연속"] = 0
             if st["n"] % 2000 == 0:
                 el = time.monotonic() - st["t0"]; rate = st["n"] / el
-                print(f"  {st['n']:,}/{len(pnus):,} 필지 · {st['rows']:,}행 · 실패 {st['fail']} · 초당 {rate:.1f} · "
-                      f"남은 {int((len(pnus) - st['n']) / max(rate, 0.1) / 60)}분", flush=True)
+                print(f"  {st['n']:,} 필지 · {st['rows']:,}행 · 실패 {st['fail']} · 초당 {rate:.1f}", flush=True)
 
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        list(ex.map(one, pnus))
+        for _ in bounded_map(ex, one, targets, a.workers * 4):
+            if st.get("멈춤"):
+                break
+    c0.close()
     el = time.monotonic() - st["t0"]
-    print(f"끝 · {st['n']:,}/{len(pnus):,} 필지 · {st['rows']:,}행 · 실패 {st['fail']} · {int(el)}초", flush=True)
+    print(f"끝 · {st['n']:,} 필지 · {st['rows']:,}행 · 실패 {st['fail']} · {int(el)}초", flush=True)
     if st.get("멈춤"):
         print(f"! 멈춤: {st['멈춤']} — 다시 돌리면 이어서 받는다", flush=True); sys.exit(1)
     if st["fail"]:
