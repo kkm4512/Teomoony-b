@@ -307,7 +307,7 @@ JOBS = {
     # ★ 적재가 끝나면 handle() 이 **저절로** 뒷줄에 건다(요약다시). 손으로 떨궈도 된다. 약 20분.
     "z-askattr-par":  ["__SQL__", os.path.join(SQLDIR, "314_ask_attr_refresh.sql"), "314_ask_attr_refresh"],
     # ---- 받은 범위표(339 meta.coverage) 다시 세기 (2026-10-24 전국 넓히기 1단계) ----
-    # ★ 화면의 'SCOPE(아직 안 받음)' 와 "○○만 다룹니다" 가 이 표를 본다. 받는 작업이 끝나면 저절로 건다(범위걸기). 약 20초.
+    # ★ 화면의 'SCOPE(아직 안 받음)' 와 "○○만 다룹니다" 가 이 표를 본다. 받는 작업이 끝나면 저절로 건다(범위걸기). 10-24 엔 약 20초 — ★ 11-10 전국이라 3~11분: 컨테이너에서는 _jobs_linux.json 의 z-coverage-par(coverage_gate.py --gap 60 · 60분 안이면 건너뜀)가 이 줄을 덮는다 · 매시 :50 수집 일정 cl-coverage-par 가 늘 센다.
     "z-coverage-par": ["__SQL__", os.path.join(SQLDIR, "339_coverage_run.sql"), "339_coverage_run"],
 
     # ---- 유치원 (2026-10-19) ----

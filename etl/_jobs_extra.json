@@ -4212,5 +4212,10 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\408_schedule_daily_report.sql"
+  ],
+  "zq-409-par": [
+    "python",
+    "ms_q.py",
+    "..\\deploy\\sql\\409_schedule_coverage.sql"
   ]
 }

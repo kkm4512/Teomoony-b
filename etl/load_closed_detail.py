@@ -160,29 +160,33 @@ def main():
                 except Stop as e: return t, None, ("STOP", str(e))
                 except Exception as e: return t, None, ("ERR", str(e))
             with ThreadPoolExecutor(max_workers=a.workers) as ex:
+                # ★ 11-10: 지번은 DB 에서 5,000개씩 읽고(뷰를 40개마다 다시 계산하지 않게 — CPU) API 는 40개씩(STOP 이면 헛호출 40개 안쪽).
                 while not a.limit or attempted < a.limit:
-                    size = min(40, a.limit - attempted) if a.limit else 40
+                    size = min(5000, a.limit - attempted) if a.limit else 5000
                     cur.execute("""SELECT TOP (%s) t.pnu, t.sigungu_cd, t.bjdong_cd, t.plat_gb_cd, t.bun, t.ji
                                     FROM gold.v_closed_detail_target t
                                     WHERE t.차례 = %s AND t.pnu > CAST(%s AS CHAR(19))
                                       AND NOT EXISTS (SELECT 1 FROM silver.bld_closed_detail_done d WHERE d.pnu = t.pnu AND d.op = %s)
                                     ORDER BY t.pnu""", (size, 차례, after, op))
-                    page = cur.fetchall()
-                    if not page:
+                    읽음 = cur.fetchall()
+                    if not 읽음:
                         break
-                    after = page[-1][0]
-                    attempted += len(page)
-                    for t, rows, err in ex.map(job, page):
-                        if err:
-                            if err[0] == "STOP": 멈춤 = err[1]; continue
-                            실패 += 1
-                            if 실패 <= 10: print(f"  ! {t[0]}: {err[1][:120]}", flush=True)
-                            continue
-                        write(cur, op, t[0], rows); n += 1; 줄 += len(rows); 호출 += max(1, -(-len(rows) // 100))
-                    conn.commit()
+                    after = 읽음[-1][0]
+                    for k0 in range(0, len(읽음), 40):
+                        page = 읽음[k0:k0 + 40]
+                        attempted += len(page)
+                        for t, rows, err in ex.map(job, page):
+                            if err:
+                                if err[0] == "STOP": 멈춤 = err[1]; continue
+                                실패 += 1
+                                if 실패 <= 10: print(f"  ! {t[0]}: {err[1][:120]}", flush=True)
+                                continue
+                            write(cur, op, t[0], rows); n += 1; 줄 += len(rows); 호출 += max(1, -(-len(rows) // 100))
+                        conn.commit()
+                        if 멈춤: break
+                        if n and n % 400 < 40:
+                            print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{attempted:,} 지번 · {줄:,}줄 · 실패 {실패} · 호출 약 {호출:,}", flush=True)
                     if 멈춤: break
-                    if n and n % 400 < 40:
-                        print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{attempted:,} 지번 · {줄:,}줄 · 실패 {실패} · 호출 약 {호출:,}", flush=True)
             print(f"[차례 {차례} · {op}] 끝 {n:,}/{attempted:,} 지번 · {줄:,}줄 · 실패 {실패}", flush=True)
             if 멈춤: break
         if 멈춤: break

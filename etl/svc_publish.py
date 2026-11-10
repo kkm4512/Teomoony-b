@@ -273,23 +273,32 @@ def prepare_work(ms, pg, a, last_wm, wm):
             with c.copy("COPY publish_changed (complex_id) FROM STDIN") as cp:
                 for cid in changed_ids(ms, since.astimezone(timezone.utc).replace(tzinfo=None)):
                     cp.write_row((cid,))
+            c.execute("SELECT count(*) FROM publish_changed"); 바뀜 = c.fetchone()[0]
             c.execute("""DELETE FROM svc.resp_cache r USING publish_changed ch
                          WHERE r.complex_id = ch.complex_id""")
+            print(f"  지나며 담긴 응답 지움 {c.rowcount:,}", flush=True)
             c.execute("SELECT to_regclass('svc.detail_dirty') IS NOT NULL")
+            다시 = 0
             if c.fetchone()[0]:
                 c.execute(f"""INSERT INTO publish_changed
                     SELECT l.complex_id FROM svc.detail_dirty d JOIN svc.complex_list l USING (complex_id)
                     WHERE d.why = '마커 실거래 칸 바뀜' AND l.merged_into IS NULL AND {DETAIL_EXISTS}
                     ORDER BY {PRIORITY} LIMIT %s ON CONFLICT DO NOTHING""", (a.dirty,))
+                다시 = c.rowcount
             c.execute(enqueue + f"""SELECT l.complex_id, k.kind FROM publish_changed ch
                 JOIN svc.complex_list l USING (complex_id) {kinds}
                 WHERE l.merged_into IS NULL AND {DETAIL_EXISTS}
                   AND k.kind IN ('detail', 'history', 'usage')
                 ORDER BY {PRIORITY}, k.ord""", defaults)
+            다시담음 = c.rowcount
+            밀림 = 0
             if a.backlog:
                 c.execute(enqueue + f"""SELECT l.complex_id, k.kind FROM svc.complex_list l
                     {kinds} WHERE l.merged_into IS NULL AND {MISSING_KIND}
                     ORDER BY {PRIORITY}, k.ord LIMIT %s""", (*defaults, a.backlog))
+                밀림 = c.rowcount
+            # ★ 11-10: 페이징으로 바꾸며 빠졌던 구분 줄 — 받을 것이 왜 그만큼인지 로그로 가른다(11-10 09:05 '23,299' 를 못 갈랐다)
+            print(f"  바뀐 단지 {바뀜:,}(기준 {since}) · 상세 다시 표에서 {다시:,} · 다시 담을 (단지, 종류) {다시담음:,} · 밀린 것 {밀림:,} 더", flush=True)
         if a.sample:
             c.execute("""DELETE FROM publish_work WHERE complex_id NOT IN (
                 SELECT complex_id FROM (SELECT DISTINCT complex_id FROM publish_work) ids

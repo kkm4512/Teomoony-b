@@ -1,5 +1,5 @@
 """Bounded batches for the large SQL Server ETL target lists."""
-from itertools import islice
+from concurrent.futures import FIRST_COMPLETED, wait
 
 
 def pnu_targets(cur, source, params=(), limit=0):
@@ -26,7 +26,26 @@ def pnu_targets(cur, source, params=(), limit=0):
 
 
 def bounded_map(executor, work, targets, window):
-    """Keep at most one window of ordered work submitted at a time."""
+    """Run work over targets with at most `window` items in flight; yield results as they finish.
+
+    2026-11-10: was batch-at-a-time (submit `window`, wait for all, submit next), so one slow call
+    (API retry/backoff) left the other workers idle. Results now come in completion order, so a
+    slow item never holds back the rest -- every caller's result carries its own key (pnu, url, ...).
+    Stopping early (break / close) cancels what has not started yet, like executor.map.
+    """
     targets = iter(targets)
-    while batch := list(islice(targets, window)):
-        yield from executor.map(work, batch)
+    pending = set()
+    try:
+        while True:
+            for target in targets:
+                pending.add(executor.submit(work, target))
+                if len(pending) >= window:
+                    break
+            if not pending:
+                return
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for f in done:
+                yield f.result()
+    finally:
+        for f in pending:
+            f.cancel()

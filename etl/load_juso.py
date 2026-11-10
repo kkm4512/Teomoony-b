@@ -110,31 +110,35 @@ def main():
     attempted = 0
     t0 = time.monotonic(); n = 0; 결과 = {"0건": 0, "1건": 0, "여럿": 0}; 실패 = 0; 멈춤 = None
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
+        # ★ 11-10: 물을 말은 DB 에서 5,000개씩 읽고(뷰를 30개마다 다시 계산하면 3만 건에 뷰 1,000번 — CPU) API 는 30개씩(STOP 이면 헛호출 30개 안쪽).
         while not a.limit or attempted < a.limit:
-            size = min(30, a.limit - attempted) if a.limit else 30
+            size = min(5000, a.limit - attempted) if a.limit else 5000
             cur.execute(f"""SELECT TOP (%s) x.keyword FROM ({ASK[a.what]}) x
                            WHERE x.keyword > CAST(%s AS NVARCHAR(300))
                            ORDER BY x.keyword""", (size, after))
-            묶음 = [row[0] for row in cur.fetchall()]
-            if not 묶음:
+            읽음 = [row[0] for row in cur.fetchall()]
+            if not 읽음:
                 break
-            after = 묶음[-1]
-            attempted += len(묶음)
-            for kw, r in zip(묶음, ex.map(lambda k: _try(k), 묶음)):
-                if isinstance(r, Exception):
-                    실패 += 1
-                    if 실패 <= 10: print(f"  ! {kw}: {str(r)[:100]}", flush=True)
-                    continue
-                raw, j = r
-                code = s(((j.get("results") or {}).get("common") or {}).get("errorCode"))
-                if code in STOP:
-                    멈춤 = f"{code} {s(((j.get('results') or {}).get('common') or {}).get('errorMessage'))}"; break
-                code, m = write(cur, kw, a.what.upper(), raw, j); n += 1
-                결과["0건" if m == 0 else "1건" if m == 1 else "여럿"] += 1
-            conn.commit()
+            after = 읽음[-1]
+            for k0 in range(0, len(읽음), 30):
+                묶음 = 읽음[k0:k0 + 30]
+                attempted += len(묶음)
+                for kw, r in zip(묶음, ex.map(lambda k: _try(k), 묶음)):
+                    if isinstance(r, Exception):
+                        실패 += 1
+                        if 실패 <= 10: print(f"  ! {kw}: {str(r)[:100]}", flush=True)
+                        continue
+                    raw, j = r
+                    code = s(((j.get("results") or {}).get("common") or {}).get("errorCode"))
+                    if code in STOP:
+                        멈춤 = f"{code} {s(((j.get('results') or {}).get('common') or {}).get('errorMessage'))}"; break
+                    code, m = write(cur, kw, a.what.upper(), raw, j); n += 1
+                    결과["0건" if m == 0 else "1건" if m == 1 else "여럿"] += 1
+                conn.commit()
+                if 멈춤: break
+                if n and n % 300 < 30:
+                    print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{attempted:,} · {결과} · 실패 {실패}", flush=True)
             if 멈춤: break
-            if n and n % 300 < 30:
-                print(f"  [{(time.monotonic() - t0) / 60:.1f}분] {n:,}/{attempted:,} · {결과} · 실패 {실패}", flush=True)
     cur.execute("EXEC meta.usp_road_code_from_juso"); 도로 = cur.fetchone(); conn.commit()
     print(f"[{a.what}] 끝 {n:,}/{attempted:,} · {결과} · 실패 {실패} · 도로명 마스터 {도로[0] if 도로 else '?'}개"
           + (f" · ⏸ 멈춤: {멈춤}" if 멈춤 else ""), flush=True)
