@@ -4217,5 +4217,23 @@
     "python",
     "ms_q.py",
     "..\\deploy\\sql\\409_schedule_coverage.sql"
+  ],
+  "zt-dqm-snap-par": [
+    "python",
+    "dqm_probe.py",
+    "snap"
+  ],
+  "zt-dqm-db-par": [
+    "python",
+    "dqm_probe.py",
+    "db",
+    "latest"
+  ],
+  "zt-dqm-diff-par": [
+    "python",
+    "dqm_probe.py",
+    "diff",
+    "prev",
+    "latest"
   ]
 }
