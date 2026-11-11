@@ -146,8 +146,8 @@ def cmd_db(a):
         kind, sgg, ym = name.rsplit("_", 2)
         rows = json.load(open(os.path.join(d, name + ".json"), encoding="utf-8"))
         api = collections.Counter(nat_key(kind, sgg, r) for r in rows)
-        cur.execute("SELECT nat_key, is_canceled, deal_ymd, bld_nm, deal_amount, deposit, monthly_rent, loaded_at FROM silver.rtms_trade "
-                    "WHERE trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
+        cur.execute("SELECT nat_key, is_canceled, deal_ymd, bld_nm, deal_amount, deposit, monthly_rent, loaded_at, umd_nm, jibun, bld_dong, exclu_use_ar, total_floor_ar, floor_no "
+                    "FROM silver.rtms_trade WHERE trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
         dbr = cur.fetchall(); dbk = {bytes(r[0]): r for r in dbr}
         c = per[kind]; c["원천줄"] += len(rows); c["원천_nat_key_겹침(합쳐짐)"] += sum(n - 1 for n in api.values() if n > 1)
         c["적재DB줄"] += len(dbr)
@@ -156,11 +156,30 @@ def cmd_db(a):
         stale = [r for k, r in dbk.items() if k not in api]
         c["적재DB에만(원천에서 사라진 옛 줄)"] += len(stale)
         c["그중_해제표시"] += sum(1 for r in stale if r[1])
+        # 원천 안 nat_key 겹침이 '완전히 같은 줄'인지(원천 중복) · 다른 칸만 다른지(서로 다른 거래가 하나로 합쳐짐)
+        byk = collections.defaultdict(set)
+        for r in rows: byk[nat_key(kind, sgg, r)].add(row_hash(r))
+        for k, hs in byk.items():
+            n = api[k]
+            if n > 1: c["  겹침_원천에서도_똑같은줄"] += n - len(hs); c["  겹침_다른칸이_다른줄(합쳐져_사라짐)"] += len(hs) - 1
+        # 원천에서 사라진 옛 줄이 '가격만 바뀐 같은 거래'로 보이나(가격 뺀 칸이 같은 원천 줄이 딱 하나)
+        def f(x): return None if x in (None, "") else float(x)
+        def idk(umd, jib, nm, dong, ymd, ar, tfa, fl): return (umd or None, jib or None, nm or None, dong or None, ymd, f(ar), f(tfa), None if fl in (None, "") else int(float(fl)))
+        src_id = collections.Counter()
+        for r in rows:
+            yr, mo, dy = pick(r, "dealYear"), pick(r, "dealMonth"), pick(r, "dealDay")
+            ymd = f"{yr}{int(mo):02d}{int(dy):02d}" if yr and mo and dy else None
+            src_id[idk(pick(r, "umdNm"), pick(r, "jibun"), pick(r, "aptNm", "mhouseNm", "offiNm"), pick(r, "aptDong"), ymd,
+                       pick(r, "excluUseAr"), pick(r, "totalFloorAr"), pick(r, "floor"))] += 1
+        for r in stale:
+            n = src_id.get(idk(r[8], r[9], r[3], r[10], r[2], r[11], r[12], r[13]), 0)
+            c["  옛줄_가격만다른_같은거래_1개" if n == 1 else ("  옛줄_후보여럿" if n > 1 else "  옛줄_원천에_같은정체성없음")] += 1
         for r in stale[:2]:
-            if len(ex) < 8: ex.append((name, str(r[2]), r[3], r[4], r[5], r[6], bool(r[1]), str(r[7])[:16]))
+            if len(ex) < 8 and kind.endswith("TRADE_DEV"): ex.append((name, str(r[2]), r[3], r[4], bool(r[1]), str(r[7])[:16], r[13]))
     for kind, c in sorted(per.items()):
-        print(f"  {kind}: " + " · ".join(f"{k} {v:,}" for k, v in c.items()))
-    for x in ex: print("  예) 적재DB에만:", x)
+        print(f"  {kind}:")
+        for k, v in c.items(): print(f"     {k} {v:,}")
+    for x in ex: print("  예) 적재DB에만:", x[:7])
 
 
 if __name__ == "__main__":
