@@ -31,6 +31,11 @@ VALUE = {k.lower() for k in (
     "rgstDate", "landLeaseholdGbn", "shareDealingType", "ownershipGbn")}
 
 
+# '늦게 채워지는' 칸 — 등기가 끝나면 원천이 동(aptDong)을 채운다(2026-11-13 실측: 하루 −17 중 13건이 동 '' → '213' 같은 꼴).
+# 1차 짝(정체성 전부)에서 남은 것 중 **옛 값이 비어 있던** 이 칸만 빼고 다시 짝지어 U 로 본다(채워진 값을 바꾼 것은 U 로 안 본다).
+LATE = {"aptdong"}
+
+
 def norm(v):
     """해시 전 정규화: 앞뒤 공백 · 겹친 공백 · 숫자의 쉼표 · 숫자 앞 0(지번 본번 같은 코드 칸은 글자 그대로)"""
     s = re.sub(r"\s+", " ", (v or "").strip())
@@ -43,9 +48,9 @@ def row_hash(r):
     return hashlib.sha256("\x1f".join(f"{k.lower()}={norm(v)}" for k, v in sorted(r.items(), key=lambda x: x[0].lower())).encode()).hexdigest()
 
 
-def id_hash(r):
+def id_hash(r, skip=()):
     return hashlib.sha256("\x1f".join(f"{k.lower()}={norm(v)}" for k, v in sorted(r.items(), key=lambda x: x[0].lower())
-                                      if k.lower() not in VALUE).encode()).hexdigest()
+                                      if k.lower() not in VALUE and k.lower() not in skip).encode()).hexdigest()
 
 
 def nat_key(kind, sgg, r):
@@ -86,6 +91,8 @@ def cmd_snap(a):
                 time.sleep(0.2)
     json.dump(man, open(os.path.join(out, "manifest.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"스냅샷 {out} · 묶음 {len(man['parts'])} · 줄 {sum(p['rows'] for p in man['parts'].values()):,}")
+    if getattr(a, "diff", False):   # 11-13: 스냅샷 바로 뒤에 비교(일정 두 줄이 밀려 함께 걸리면 비교가 먼저 돌던 것)
+        print(); a.a, a.b = "prev", "latest"; cmd_diff(a)
 
 
 def load(snap):
@@ -99,6 +106,8 @@ def load(snap):
 
 
 def cmd_diff(a):
+    ds = sorted(x for x in os.listdir(ROOT) if os.path.exists(os.path.join(ROOT, x, "manifest.json"))) if os.path.isdir(ROOT) else []
+    if len(ds) < 2: print("스냅샷이 2개 안 된다 — 건너뜀"); sys.exit(3)
     da, ma = load(a.a); db, mb = load(a.b)
     tot = collections.Counter(); per = collections.defaultdict(collections.Counter); fields = collections.Counter()
     ex = []
@@ -115,20 +124,35 @@ def cmd_diff(a):
         g = collections.defaultdict(lambda: [[], []])
         for h, n in minus.items(): g[id_hash(byh_a[h])][0] += [h] * n
         for h, n in plus.items(): g[id_hash(byh_b[h])][1] += [h] * n
+        def u(ra, rb, tag="U"):
+            c[tag] += 1
+            ch = sorted(k for k in set(ra) | set(rb) if norm(ra.get(k)) != norm(rb.get(k)))
+            for k in ch: fields[k] += 1
+            if len(ex) < 8: ex.append((name, {k: (ra.get(k), rb.get(k)) for k in ch}))
+        left_m, left_p = [], []
         for idh, (m, p) in g.items():
-            if len(m) == 1 and len(p) == 1:
-                c["U"] += 1
-                ra, rb = byh_a[m[0]], byh_b[p[0]]
-                ch = sorted(k for k in set(ra) | set(rb) if norm(ra.get(k)) != norm(rb.get(k)))
-                for k in ch: fields[k] += 1
-                if len(ex) < 8: ex.append((name, {k: (ra.get(k), rb.get(k)) for k in ch}))
+            if len(m) == 1 and len(p) == 1: u(byh_a[m[0]], byh_b[p[0]])
+            elif m and not p: left_m += m
+            elif p and not m: left_p += p
+            else:
+                k2 = min(len(m), len(p)); c["애매(짝 후보 여럿)"] += k2; c["D"] += len(m) - k2; c["I"] += len(p) - k2
+        # 2차 짝: 늦게 채워지는 칸(LATE)이 옛 줄에서 비어 있던 것만, 그 칸을 빼고 다시
+        g2 = collections.defaultdict(lambda: [[], []])
+        for h in left_m:
+            r = byh_a[h]
+            if all(not norm(r.get(k) or next((v for kk, v in r.items() if kk.lower() == k), "")) for k in LATE):
+                g2[id_hash(r, LATE)][0].append(h)
+            else: c["D"] += 1
+        for h in left_p: g2[id_hash(byh_b[h], LATE)][1].append(h)
+        for idh, (m, p) in g2.items():
+            if len(m) == 1 and len(p) == 1: u(byh_a[m[0]], byh_b[p[0]], "U(늦게 채워진 칸)")
             elif m and not p: c["D"] += len(m)
             elif p and not m: c["I"] += len(p)
             else:
                 k2 = min(len(m), len(p)); c["애매(짝 후보 여럿)"] += k2; c["D"] += len(m) - k2; c["I"] += len(p) - k2
     print(f"A {ma['at']}  →  B {mb['at']}")
     for kind, c in sorted(per.items()):
-        print(f"  {kind}: 어제 {c['어제줄']:,} · 오늘 {c['오늘줄']:,} · 같음 {c['같음']:,} · I {c['I']:,} · U {c['U']:,} · D {c['D']:,} · 애매 {c['애매(짝 후보 여럿)']:,}")
+        print(f"  {kind}: 어제 {c['어제줄']:,} · 오늘 {c['오늘줄']:,} · 같음 {c['같음']:,} · I {c['I']:,} · U {c['U']:,} + 늦게채움 {c['U(늦게 채워진 칸)']:,} · D {c['D']:,} · 애매 {c['애매(짝 후보 여럿)']:,}")
     if tot: print("  ", dict(tot))
     print("U 에서 바뀐 칸:", fields.most_common(15))
     for name, chg in ex: print("  예)", name, json.dumps(chg, ensure_ascii=False)[:300])
@@ -185,7 +209,7 @@ def cmd_db(a):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
     s = sp.add_parser("snap"); s.add_argument("--sgg", default="11680,11710,11350"); s.add_argument("--months", type=int, default=3)
-    s.add_argument("--kinds", default="APT_TRADE_DEV,APT_RENT")
+    s.add_argument("--kinds", default="APT_TRADE_DEV,APT_RENT"); s.add_argument("--diff", action="store_true", help="받은 뒤 바로 어제와 비교")
     s2 = sp.add_parser("diff"); s2.add_argument("a"); s2.add_argument("b")
     s3 = sp.add_parser("db"); s3.add_argument("snap")
     a = ap.parse_args()

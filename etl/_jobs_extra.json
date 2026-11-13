@@ -4216,12 +4216,13 @@
   "zq-409-par": [
     "python",
     "ms_q.py",
-    "..\\deploy\\sql\\409_schedule_coverage.sql"
+    "..\\deploy\\sql\\409_dqm_diff_off.sql"
   ],
   "zt-dqm-snap-par": [
     "python",
     "dqm_probe.py",
-    "snap"
+    "snap",
+    "--diff"
   ],
   "zt-dqm-db-par": [
     "python",
