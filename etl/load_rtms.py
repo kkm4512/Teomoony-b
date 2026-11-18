@@ -30,7 +30,7 @@ load_rtms - 국토교통부 실거래가 10종 적재 + 단지 매칭
   * 해제 거래는 같은 거래가 다시 내려온다 -> 기존 행 UPDATE
   * 금액은 "63,000"(만원) -> 원 단위로 환산해 저장
 """
-import argparse, hashlib, os, re, sys, time
+import argparse, collections, hashlib, json, os, re, sys, time
 import progress
 import xml.etree.ElementTree as ET
 import requests
@@ -60,6 +60,18 @@ KINDS_DEFAULT = [k for k in KINDS if k != "SILV_TRADE"]   # --kind 를 안 주�
 
 JIBUN_RE = re.compile(r'^\s*(산)?\s*(\d+)(?:\s*-\s*(\d+))?\s*$')
 TAIL_RE  = re.compile(r'\s*(산\s*)?\d+(-\d+)?\s*번?지?\s*$')
+
+
+def 순번키(base, k):
+    """★ 2026-11-18 (DQM 발견 1 · 사장님 ㄱㄱ): 원천에는 키 칸이 다 같은 줄이 여럿 있다(일괄 매각 10건 · '해제 + 같은 값 재신고' ·
+    계약 조건만 다른 전월세). 예전엔 nat_key 가 고유라 하나로 합쳐졌다(서울 3구 표본 매매 172 · 전월세 249줄 빠짐).
+    이제 한 번 받은 묶음(종목 × 시군구 × 계약월) 안에서 같은 키의 k 번째 줄은 키에 '#k' 를 붙인다. k = 1 은 옛 키 그대로라 있던 줄이 안 바뀐다.
+    순서는 줄 전체 글로 정렬해 정한다(받을 때마다 같다)."""
+    return base if k == 1 else hashlib.sha256(base + f"#{k}".encode()).digest()
+
+
+def 줄순서(r):
+    return json.dumps(r, sort_keys=True, ensure_ascii=False)
 
 
 def load_env(p):
@@ -314,14 +326,15 @@ def main():
     unknown = {}
     for kind in kinds:
         url, is_rent, masked = KINDS[kind]
-        got = new = 0
+        got = new = late = 0
         halted = None
         for ym in ms:
             rows, st = fetch(url, key, args.sgg, ym)
             if st != "OK":
                 halted = st; break
             got += len(rows)
-            for r in rows:
+            이번키 = set(); 미룸 = []; 몇번째 = collections.Counter(); 줄들 = []
+            for r in sorted(rows, key=줄순서):
                 yr, mo, dy = pick(r,"dealYear"), pick(r,"dealMonth"), pick(r,"dealDay")
                 ymd = (f"{yr}{int(mo):02d}{int(dy):02d}"
                        if yr and mo and dy and str(mo).isdigit() and str(dy).isdigit() else None)
@@ -394,15 +407,28 @@ def main():
                     ownership_gbn=pick(r,"ownershipGbn"),          # 분양권 '분' / 입주권 '입' (SILV_TRADE 만)
                     match_pnu=pnu, match_method=method, match_note=note,
                 )
-                nat = hashlib.sha256("\x1f".join(str(vals[k]) for k in (
+                base = hashlib.sha256("\x1f".join(str(vals[k]) for k in (
                     "trade_kind","sgg_cd","umd_nm","jibun","bld_nm","bld_dong","deal_ymd",
                     "deal_amount","deposit","monthly_rent","exclu_use_ar","total_floor_ar",
                     "floor_no")).encode()).digest()
-
-                cur.execute("UPDATE silver.rtms_trade SET cdeal_type=%s, cdeal_day=%s "
-                            "WHERE nat_key=%s",
-                            (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
-                if cur.rowcount == 0:
+                몇번째[base] += 1
+                nat = 순번키(base, 몇번째[base])
+                이번키.add(nat); 줄들.append((r, vals, base, nat))
+            # 같은 키가 여럿인 묶음은 k 번째 줄의 값 칸을 원천과 똑같이 맞춘다(예전에 합쳐진 한 줄은 첫 줄 값만 갖고 있다 —
+            # 해제만 고치면 '계약 조건이 다른 두 전월세' 중 하나의 값이 사라진다). 하나뿐인 키는 예전처럼 해제 칸만 고친다.
+            for r, vals, base, nat in 줄들:
+                if 몇번째[base] > 1:
+                    cols = list(vals.keys())
+                    cur.execute(f"UPDATE silver.rtms_trade SET {', '.join(c + ' = %s' for c in cols)}, cdeal_type = %s, cdeal_day = %s "
+                                "WHERE nat_key = %s", tuple(vals[c] for c in cols) + (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
+                else:
+                    cur.execute("UPDATE silver.rtms_trade SET cdeal_type=%s, cdeal_day=%s "
+                                "WHERE nat_key=%s",
+                                (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
+                없음 = cur.rowcount == 0      # ★ 아래 SELECT 가 rowcount 를 바꾸므로 먼저 잡아 둔다
+                if 없음 and vals["bld_dong"]:
+                    미룸.append((nat, vals, pick(r,"cdealType"), pick(r,"cdealDay"))); continue
+                if 없음:
                     cols = list(vals.keys())
                     cur.execute(
                         f"INSERT INTO silver.rtms_trade (nat_key, {', '.join(cols)}, cdeal_type, cdeal_day) "
@@ -410,8 +436,38 @@ def main():
                         (nat,) + tuple(vals[c] for c in cols)
                         + (pick(r,"cdealType"), pick(r,"cdealDay")))
                     new += 1
+            # ★ 2026-11-18 (DQM 발견 2 · 사장님 ㄱㄱ): 등기가 끝나면 원천이 동(aptDong)을 뒤늦게 채운다 → nat_key 가 바뀌어
+            #   같은 거래가 새 줄로 또 들어가고 동 없는 옛 줄도 남았다(서울 2,404줄 지움 · 419). 동 있는 줄이 키로 안 찾아지면,
+            #   동만 빼고 키 칸이 같은 '동 빈 옛 줄' 중 **이번에 받은 묶음에 없는 것**(원천에서 사라진 것)을 하나 골라 고친다.
+            #   ★ 해제된 옛 줄(cdeal_type 'O')은 안 고른다 — 원천에 따로 남는 '해제된 원래 신고 + 동 있는 재신고' 다
+            #     (419 에서 지웠다가 7,437줄 되돌림 · 419b). 이번 묶음에 있는 옛 줄도 안 고른다(원천에 둘 다 있으면 둘 다 진짜).
+            #   찾기는 NOLOCK — 11-18 다시 받기(구 × 연도 12개 동시)에서 같은 구의 다른 해 조각과 잠금이 엉켜 4조각이 deadlock 으로 죽었다.
+            #   다른 조각은 계약월이 달라 후보가 될 수 없다.
+            쓴 = set()
+            def 같음(c):
+                return f"({c} = %s OR ({c} IS NULL AND %s IS NULL))"
+            키칸 = ("umd_nm", "jibun", "bld_nm", "deal_ymd", "deal_amount", "deposit", "monthly_rent",
+                   "exclu_use_ar", "total_floor_ar", "floor_no")
+            for nat, vals, cdt, cdd in 미룸:
+                cur.execute("SELECT TOP (50) trade_sk, nat_key FROM silver.rtms_trade WITH (NOLOCK) WHERE trade_kind = %s AND sgg_cd = %s "
+                            "AND ISNULL(bld_dong, '') = '' AND ISNULL(cdeal_type, '') = '' AND " + " AND ".join(같음(c) for c in 키칸)
+                            + " ORDER BY trade_sk",
+                            (kind, vals["sgg_cd"]) + tuple(v for c in 키칸 for v in (vals[c], vals[c])))
+                옛줄 = next((sk for sk, nk in cur.fetchall() if bytes(nk) not in 이번키 and sk not in 쓴), None)
+                cols = list(vals.keys())
+                if 옛줄 is not None:
+                    cur.execute(f"UPDATE silver.rtms_trade SET nat_key = %s, {', '.join(c + ' = %s' for c in cols)}, "
+                                "cdeal_type = %s, cdeal_day = %s WHERE trade_sk = %s",
+                                (nat,) + tuple(vals[c] for c in cols) + (cdt, cdd, 옛줄))
+                    쓴.add(옛줄); late += 1
+                else:
+                    cur.execute(
+                        f"INSERT INTO silver.rtms_trade (nat_key, {', '.join(cols)}, cdeal_type, cdeal_day) "
+                        f"VALUES (%s, {', '.join(['%s']*len(cols))}, %s, %s)",
+                        (nat,) + tuple(vals[c] for c in cols) + (cdt, cdd))
+                    new += 1
             conn.commit()
-        tag = f"  {kind:14s} 수신 {got:5d}  신규 {new:5d}"
+        tag = f"  {kind:14s} 수신 {got:5d}  신규 {new:5d}" + (f"  동늦게채움 {late:5d}" if late else "")
         print(tag + (f"   [중단: {halted}]" if halted else ""))
 
     if getattr(args, "no_match", False):

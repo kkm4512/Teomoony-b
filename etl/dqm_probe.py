@@ -19,7 +19,7 @@ import argparse, collections, datetime as D, hashlib, json, os, re, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from load_rtms import KINDS, ENV, fetch, load_env, money, num, pick, months   # noqa: E402
+from load_rtms import KINDS, ENV, fetch, load_env, money, num, pick, months, 순번키, 줄순서   # noqa: E402
 
 ROOT = os.path.join(HERE, "..", "data", "dqm", "snap")
 
@@ -169,15 +169,18 @@ def cmd_db(a):
         if p["status"] != "OK": continue
         kind, sgg, ym = name.rsplit("_", 2)
         rows = json.load(open(os.path.join(d, name + ".json"), encoding="utf-8"))
-        api = collections.Counter(nat_key(kind, sgg, r) for r in rows)
+        api = collections.Counter(nat_key(kind, sgg, r) for r in rows)      # 옛 키(같은 키 몇 줄인지)
+        몇 = collections.Counter(); 지금키 = set()                              # 11-18 load_rtms 와 같은 순번 키
+        for r in sorted(rows, key=줄순서):
+            b = nat_key(kind, sgg, r); 몇[b] += 1; 지금키.add(순번키(b, 몇[b]))
         cur.execute("SELECT nat_key, is_canceled, deal_ymd, bld_nm, deal_amount, deposit, monthly_rent, loaded_at, umd_nm, jibun, bld_dong, exclu_use_ar, total_floor_ar, floor_no "
                     "FROM silver.rtms_trade WHERE trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
         dbr = cur.fetchall(); dbk = {bytes(r[0]): r for r in dbr}
         c = per[kind]; c["원천줄"] += len(rows); c["원천_nat_key_겹침(합쳐짐)"] += sum(n - 1 for n in api.values() if n > 1)
         c["적재DB줄"] += len(dbr)
-        c["둘다"] += sum(1 for k in api if k in dbk)
-        c["원천에만(아직 안 들어옴)"] += sum(1 for k in api if k not in dbk)
-        stale = [r for k, r in dbk.items() if k not in api]
+        c["둘다"] += sum(1 for k in 지금키 if k in dbk)
+        c["원천에만(아직 안 들어옴)"] += sum(1 for k in 지금키 if k not in dbk)
+        stale = [r for k, r in dbk.items() if k not in 지금키]
         c["적재DB에만(원천에서 사라진 옛 줄)"] += len(stale)
         c["그중_해제표시"] += sum(1 for r in stale if r[1])
         # 원천 안 nat_key 겹침이 '완전히 같은 줄'인지(원천 중복) · 다른 칸만 다른지(서로 다른 거래가 하나로 합쳐짐)
