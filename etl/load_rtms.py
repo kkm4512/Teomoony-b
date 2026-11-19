@@ -30,7 +30,7 @@ load_rtms - 국토교통부 실거래가 10종 적재 + 단지 매칭
   * 해제 거래는 같은 거래가 다시 내려온다 -> 기존 행 UPDATE
   * 금액은 "63,000"(만원) -> 원 단위로 환산해 저장
 """
-import argparse, collections, hashlib, json, os, re, sys, time
+import argparse, collections, hashlib, json, os, random, re, sys, time
 import progress
 import xml.etree.ElementTree as ET
 import requests
@@ -72,6 +72,32 @@ def 순번키(base, k):
 
 def 줄순서(r):
     return json.dumps(r, sort_keys=True, ensure_ascii=False)
+
+
+키칸들 = ("trade_kind", "sgg_cd", "umd_nm", "jibun", "bld_nm", "bld_dong", "deal_ymd",
+         "deal_amount", "deposit", "monthly_rent", "exclu_use_ar", "total_floor_ar", "floor_no")
+
+
+def 키값(kind, sgg, r):
+    """nat_key 를 만드는 칸만 원천 줄에서 꺼낸다(2026-11-19 — load_rtms · dqm_probe · rtms_gone 이 이 한 곳을 쓴다)."""
+    yr, mo, dy = pick(r, "dealYear"), pick(r, "dealMonth"), pick(r, "dealDay")
+    ymd = (f"{yr}{int(mo):02d}{int(dy):02d}" if yr and mo and dy and str(mo).isdigit() and str(dy).isdigit() else None)
+    return dict(trade_kind=kind, sgg_cd=pick(r, "sggCd") or sgg, umd_nm=pick(r, "umdNm"), jibun=pick(r, "jibun"),
+                bld_nm=pick(r, "aptNm", "mhouseNm", "offiNm"), bld_dong=pick(r, "aptDong"), deal_ymd=ymd,
+                deal_amount=money(pick(r, "dealAmount")), deposit=money(pick(r, "deposit")), monthly_rent=money(pick(r, "monthlyRent")),
+                exclu_use_ar=num(pick(r, "excluUseAr")), total_floor_ar=num(pick(r, "totalFloorAr")), floor_no=num(pick(r, "floor"), int))
+
+
+def 기본키(v):
+    return hashlib.sha256("\x1f".join(str(v[k]) for k in 키칸들).encode()).digest()
+
+
+def 묶음키들(kind, sgg, rows):
+    """한 묶음(종목 × 시군구 × 계약월) 원천 줄들 → [(줄, 순번 키)] — load_rtms 가 적재하는 키와 똑같다."""
+    몇 = collections.Counter(); out = []
+    for r in sorted(rows, key=줄순서):
+        b = 기본키(키값(kind, sgg, r)); 몇[b] += 1; out.append((r, b, 순번키(b, 몇[b]), 몇))
+    return out
 
 
 def load_env(p):
@@ -118,7 +144,7 @@ def seed_lawd(cur, conn):
 
 
 def fetch(url, key, sgg, ym, retries=3):
-    out, page = [], 1
+    out, page, 쉼 = [], 1, 0
     while True:
         p = {"serviceKey": key, "LAWD_CD": sgg, "DEAL_YMD": ym,
              "numOfRows": "1000", "pageNo": str(page)}
@@ -132,6 +158,10 @@ def fetch(url, key, sgg, ym, retries=3):
         try: x = ET.fromstring(txt)
         except ET.ParseError: return out, "PARSE_FAIL"
         code = x.findtext(".//resultCode") or x.findtext(".//returnReasonCode")
+        if code == "23" and 쉼 < 30:
+            # ★ 2026-11-19: '23 초당 서비스 요청제한 횟수 초과' — 11-18 밤 다시 받기(12개 동시)에서 이걸로 수백 조각이 중간에 멈췄는데
+            #   종료코드 0 이라 성공으로 보였다. 잠깐 쉬고 같은 쪽을 다시 받는다.
+            쉼 += 1; time.sleep(min(0.5 * 쉼, 3) + random.random()); continue
         if code not in (None, "00", "000", "0"):
             msg = x.findtext(".//resultMsg") or x.findtext(".//returnAuthMsg") or ""
             return out, f"{code} {msg}"
@@ -324,6 +354,7 @@ def main():
     print(f"법정동 이름->코드 매핑 {len(name2code)}건\n")
 
     unknown = {}
+    중단들 = []
     for kind in kinds:
         url, is_rent, masked = KINDS[kind]
         got = new = late = 0
@@ -407,10 +438,7 @@ def main():
                     ownership_gbn=pick(r,"ownershipGbn"),          # 분양권 '분' / 입주권 '입' (SILV_TRADE 만)
                     match_pnu=pnu, match_method=method, match_note=note,
                 )
-                base = hashlib.sha256("\x1f".join(str(vals[k]) for k in (
-                    "trade_kind","sgg_cd","umd_nm","jibun","bld_nm","bld_dong","deal_ymd",
-                    "deal_amount","deposit","monthly_rent","exclu_use_ar","total_floor_ar",
-                    "floor_no")).encode()).digest()
+                base = 기본키(키값(kind, args.sgg, r))
                 몇번째[base] += 1
                 nat = 순번키(base, 몇번째[base])
                 이번키.add(nat); 줄들.append((r, vals, base, nat))
@@ -444,15 +472,15 @@ def main():
             #   찾기는 NOLOCK — 11-18 다시 받기(구 × 연도 12개 동시)에서 같은 구의 다른 해 조각과 잠금이 엉켜 4조각이 deadlock 으로 죽었다.
             #   다른 조각은 계약월이 달라 후보가 될 수 없다.
             쓴 = set()
-            def 같음(c):
-                return f"({c} = %s OR ({c} IS NULL AND %s IS NULL))"
             키칸 = ("umd_nm", "jibun", "bld_nm", "deal_ymd", "deal_amount", "deposit", "monthly_rent",
                    "exclu_use_ar", "total_floor_ar", "floor_no")
             for nat, vals, cdt, cdd in 미룸:
+                # ★ 11-19: 값이 있으면 'c = %s', 없으면 'c IS NULL' 로 — OR 를 섞으면 ix_rtms_scope(sgg_cd, umd_nm, deal_ymd)를 못 타 구 전체를 훑었다
+                조건 = [f"{c} = %s" if vals[c] is not None else f"{c} IS NULL" for c in 키칸]
                 cur.execute("SELECT TOP (50) trade_sk, nat_key FROM silver.rtms_trade WITH (NOLOCK) WHERE trade_kind = %s AND sgg_cd = %s "
-                            "AND ISNULL(bld_dong, '') = '' AND ISNULL(cdeal_type, '') = '' AND " + " AND ".join(같음(c) for c in 키칸)
+                            "AND ISNULL(bld_dong, '') = '' AND ISNULL(cdeal_type, '') = '' AND " + " AND ".join(조건)
                             + " ORDER BY trade_sk",
-                            (kind, vals["sgg_cd"]) + tuple(v for c in 키칸 for v in (vals[c], vals[c])))
+                            (kind, vals["sgg_cd"]) + tuple(vals[c] for c in 키칸 if vals[c] is not None))
                 옛줄 = next((sk for sk, nk in cur.fetchall() if bytes(nk) not in 이번키 and sk not in 쓴), None)
                 cols = list(vals.keys())
                 if 옛줄 is not None:
@@ -468,13 +496,18 @@ def main():
                     new += 1
             conn.commit()
         tag = f"  {kind:14s} 수신 {got:5d}  신규 {new:5d}" + (f"  동늦게채움 {late:5d}" if late else "")
-        print(tag + (f"   [중단: {halted}]" if halted else ""))
+        print(tag + (f"   [중단: {halted}]" if halted else ""), flush=True)
+        if halted: 중단들.append(f"{kind} {halted}")
 
     if getattr(args, "no_match", False):
         print("\n(--no-match: 매칭 패스 건너뜀)")
     else:
         match_pass(cur, conn, name2code_all, unknown)
     conn.close()
+    if 중단들:
+        # ★ 2026-11-19: 받다가 멈춘 종목이 있으면 실패로 끝낸다(예전엔 0 — 부르는 쪽이 일부만 받은 걸 몰랐다).
+        print("!! 중단된 종목:", " · ".join(중단들), flush=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

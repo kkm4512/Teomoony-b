@@ -19,7 +19,7 @@ import argparse, collections, datetime as D, hashlib, json, os, re, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from load_rtms import KINDS, ENV, fetch, load_env, money, num, pick, months, 순번키, 줄순서   # noqa: E402
+from load_rtms import KINDS, ENV, fetch, load_env, money, num, pick, months, 순번키, 줄순서, 키값, 기본키   # noqa: E402
 
 ROOT = os.path.join(HERE, "..", "data", "dqm", "snap")
 
@@ -54,16 +54,8 @@ def id_hash(r, skip=()):
 
 
 def nat_key(kind, sgg, r):
-    """load_rtms.py 와 똑같이(적재DB nat_key 대조용)."""
-    yr, mo, dy = pick(r, "dealYear"), pick(r, "dealMonth"), pick(r, "dealDay")
-    ymd = (f"{yr}{int(mo):02d}{int(dy):02d}" if yr and mo and dy and str(mo).isdigit() and str(dy).isdigit() else None)
-    vals = dict(trade_kind=kind, sgg_cd=pick(r, "sggCd") or sgg, umd_nm=pick(r, "umdNm"), jibun=pick(r, "jibun"),
-                bld_nm=pick(r, "aptNm", "mhouseNm", "offiNm"), bld_dong=pick(r, "aptDong"), deal_ymd=ymd,
-                deal_amount=money(pick(r, "dealAmount")), deposit=money(pick(r, "deposit")), monthly_rent=money(pick(r, "monthlyRent")),
-                exclu_use_ar=num(pick(r, "excluUseAr")), total_floor_ar=num(pick(r, "totalFloorAr")), floor_no=num(pick(r, "floor"), int))
-    return hashlib.sha256("\x1f".join(str(vals[k]) for k in (
-        "trade_kind", "sgg_cd", "umd_nm", "jibun", "bld_nm", "bld_dong", "deal_ymd",
-        "deal_amount", "deposit", "monthly_rent", "exclu_use_ar", "total_floor_ar", "floor_no")).encode()).digest()
+    """load_rtms 의 키(11-19 부터 load_rtms.키값 · 기본키 한 곳)."""
+    return 기본키(키값(kind, sgg, r))
 
 
 def cmd_snap(a):
