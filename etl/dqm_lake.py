@@ -18,6 +18,7 @@
   python dqm_lake.py check                 유실 검증: 상태(N-1) + 변경(N) = 상태(N) · 상태(N) = 원천 스냅샷 N (모든 버전)
   python dqm_lake.py restore --version N   버전 N 의 내용으로 **새 버전**을 만든다(되돌리기 · 기록은 남는다)
   python dqm_lake.py expire [--days 30]    보관 정책: 오래된 Iceberg 스냅샷 정리(결정 4: 1개월)
+  python dqm_lake.py dashboard             터무니 관리자 화면(내정보 → DQM)용 요약 data/dqm/dashboard.json
 """
 import argparse, collections, datetime as D, json, os, sys, time
 
@@ -221,36 +222,83 @@ def cmd_changes(a):
         json.dump(rows, open(a.out, "w", encoding="utf-8"), ensure_ascii=False); print("   →", a.out)
 
 
-def cmd_check(a):
-    """유실 검증 두 가지(모든 버전): ① 상태(N-1) + 변경(N) = 상태(N)  ② 상태(N) 의 OK 묶음 = 원천 스냅샷 N(줄 해시 개수까지)"""
-    cat = 카탈로그(); vs = 버전목록(cat); st = 표(cat, "rtms_state", STATE); ch = 표(cat, "rtms_changes", CHANGES)
+def 검증결과(cat):
+    """유실 검증 두 가지(모든 버전): ① 상태(N-1) + 변경(N) = 상태(N)  ② 상태(N) 의 OK 묶음 = 원천 스냅샷 N(줄 해시 개수까지)
+    돌려줌: [{version, snap, 줄, 원천줄, ok1, ok2(None = 되돌리기 버전)}]"""
+    vs = 버전목록(cat); st = 표(cat, "rtms_state", STATE); ch = 표(cat, "rtms_changes", CHANGES)
     allch = collections.defaultdict(list)
     for x in 읽기(ch): allch[x["version"]].append(x)
-    prev = {}; bad = 0
+    prev = {}; out = []
     for v in vs:
-        cur = {x["trade_id"]: x["row_hash"] for x in 읽기(st, snapshot_id=v["state_snapshot_id"])}
-        # ①
+        rows = 읽기(st, snapshot_id=v["state_snapshot_id"])
+        cur = {x["trade_id"]: x["row_hash"] for x in rows}
         exp = dict(prev)
         for x in allch[v["version"]]:
             if x["op"] == "D": exp.pop(x["trade_id"], None)
             else: exp[x["trade_id"]] = x["after_hash"]
-        ok1 = exp == cur
-        # ② (되돌리기로 만든 버전은 원천 스냅샷이 없다 — ①만)
-        if v["snap"].startswith("restore_"):
-            bad += not ok1; print(f"  v{v['version']:<3} {v['snap']}  ① {'맞음' if ok1 else '틀림'}  ② (되돌리기 버전 — 원천 없음)"); prev = cur; continue
-        db, mb = load(v["snap"]); src = collections.Counter(); mine = collections.Counter()
-        okb = {n for n, p in mb["parts"].items() if p["status"] == "OK"}
-        for n in okb:
-            for r in 묶음줄(db, n): src[(n, row_hash(r))] += 1
-        for x in 읽기(st, snapshot_id=v["state_snapshot_id"]):
-            n = f"{x['kind']}_{x['sgg']}_{x['ym']}"
-            if n in okb: mine[(n, x["row_hash"])] += 1
-        ok2 = src == mine
-        bad += (not ok1) + (not ok2)
-        print(f"  v{v['version']:<3} {v['snap']}  ① 앞 상태 + 변경 = 이 상태: {'맞음' if ok1 else '틀림'}  ② 이 상태 = 원천 스냅샷: {'맞음' if ok2 else '틀림'}"
-              f"  ({len(cur):,}줄 · 원천 {sum(src.values()):,}줄)")
-        prev = cur
+        r = {"version": v["version"], "snap": v["snap"], "줄": len(cur), "원천줄": None, "ok1": exp == cur, "ok2": None}
+        if not v["snap"].startswith("restore_"):
+            db, mb = load(v["snap"]); src = collections.Counter(); mine = collections.Counter()
+            okb = {n for n, p in mb["parts"].items() if p["status"] == "OK"}
+            for n in okb:
+                for rr in 묶음줄(db, n): src[(n, row_hash(rr))] += 1
+            for x in rows:
+                n = f"{x['kind']}_{x['sgg']}_{x['ym']}"
+                if n in okb: mine[(n, x["row_hash"])] += 1
+            r["원천줄"] = sum(src.values()); r["ok2"] = src == mine
+        out.append(r); prev = cur
+    return out
+
+
+def cmd_check(a):
+    bad = 0
+    for r in 검증결과(카탈로그()):
+        bad += (not r["ok1"]) + (r["ok2"] is False)
+        둘 = "(되돌리기 버전 — 원천 없음)" if r["ok2"] is None else ("맞음" if r["ok2"] else "틀림")
+        print(f"  v{r['version']:<3} {r['snap']}  ① 앞 상태 + 변경 = 이 상태: {'맞음' if r['ok1'] else '틀림'}  ② 이 상태 = 원천 스냅샷: {둘}"
+              + (f"  ({r['줄']:,}줄 · 원천 {r['원천줄']:,}줄)" if r["원천줄"] is not None else ""))
     print("유실 없음" if not bad else f"!! 틀린 곳 {bad}"); sys.exit(1 if bad else 0)
+
+
+def cmd_dashboard(a):
+    """터무니 관리자 화면(내정보 → DQM)용 요약 → data/dqm/dashboard.json (웹은 이 파일만 읽는다 · Iceberg 는 작업 큐에서만 읽힘)."""
+    cat = 카탈로그(); vs = 버전목록(cat); ch = 읽기(표(cat, "rtms_changes", CHANGES))
+    검증 = {r["version"]: r for r in 검증결과(cat)}
+    보는칸 = ("aptNm", "aptDong", "floor", "excluUseAr", "dealYear", "dealMonth", "dealDay", "dealAmount", "deposit", "monthlyRent", "cdealType", "cdealDay", "rgstDate")
+    def 줄요약(js):
+        if not js: return None
+        r = json.loads(js); return {k: r.get(k) for k in 보는칸 if r.get(k) not in (None, "")}
+    # ① 원천 스냅샷(최근 14개)
+    스냅 = []
+    for s in 스냅샷들()[-14:]:
+        d, m = load(s); ps = m["parts"]
+        스냅.append({"snap": s, "at": m.get("at"), "묶음": len(ps), "OK": sum(1 for p in ps.values() if p["status"] == "OK"),
+                    "줄": sum(p["rows"] for p in ps.values()),
+                    "묶음들": [{"name": n, "status": p["status"], "rows": p["rows"], "sha": p["sha256"][:12]} for n, p in sorted(ps.items())] if s == 스냅샷들()[-1] else None})
+    # ④ 버전 · 검증 · 변경
+    op수 = collections.defaultdict(collections.Counter)
+    for x in ch: op수[x["version"]][x["op"] + ("_애매" if x["amb"] else "") + ("_늦게" if x["late"] else "")] += 1
+    버전 = [{**{k: v[k] for k in ("version", "snap", "snap_at", "rows", "n_i", "n_u", "n_d", "n_amb", "bundles_ok", "bundles_kept")},
+             "ok1": 검증[v["version"]]["ok1"], "ok2": 검증[v["version"]]["ok2"], "원천줄": 검증[v["version"]]["원천줄"], "op": dict(op수[v["version"]])} for v in vs]
+    바뀐칸수 = collections.Counter()
+    원천변경 = [x for x in ch if not str(x["snap"]).startswith("restore_")]   # 되돌리기 버전은 원천 변경이 아니라 뺀다(이력에는 남김)
+    for x in 원천변경:
+        if x["op"] == "U" and x["changed_cols"]: 바뀐칸수.update(x["changed_cols"].split(","))
+    U예 = [{"version": x["version"], "trade_id": x["trade_id"], "kind": x["kind"], "sgg": x["sgg"], "late": x["late"], "cols": x["changed_cols"],
+            "앞": 줄요약(x["before_json"]), "뒤": 줄요약(x["after_json"])} for x in sorted(원천변경, key=lambda x: (-x["version"], x["trade_id"])) if x["op"] == "U"][:60]
+    # 거래 이력 찾기용: 거래마다 처음(I) 요약 + 이후 변경(U · D)
+    이력 = collections.defaultdict(list)
+    for x in sorted(ch, key=lambda x: (x["version"], x["op"] != "D")):
+        e = {"v": x["version"], "op": x["op"]}
+        if x["op"] == "I": e["값"] = 줄요약(x["after_json"])
+        elif x["op"] == "U": a_, b_ = json.loads(x["before_json"]), json.loads(x["after_json"]); e["바뀜"] = {k: [a_.get(k), b_.get(k)] for k in (x["changed_cols"] or "").split(",") if k}
+        이력[x["trade_id"]].append(e)
+    out = {"만든때": D.datetime.now().isoformat(timespec="seconds"), "범위": "서울 강남 · 송파 · 노원 × 최근 3개월 × 아파트 매매 · 전월세",
+           "스냅샷": 스냅, "버전": 버전, "바뀐칸": 바뀐칸수.most_common(12), "U예": U예, "이력": {str(k): v for k, v in 이력.items()},
+           "보관일": 30}
+    p = os.path.abspath(os.path.join(LAKE, "..", "dashboard.json"))
+    tmp = p + ".tmp"; json.dump(out, open(tmp, "w", encoding="utf-8"), ensure_ascii=False); os.replace(tmp, p)
+    print(f"→ {p} · 버전 {len(버전)} · 스냅샷 {len(스냅)} · U 예 {len(U예)} · 거래 {len(이력):,} · {os.path.getsize(p)/1024:.0f}KB")
 
 
 def cmd_restore(a):
@@ -299,7 +347,7 @@ def cmd_expire(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
-    sp.add_parser("build"); sp.add_parser("versions"); sp.add_parser("check")
+    sp.add_parser("build"); sp.add_parser("versions"); sp.add_parser("check"); sp.add_parser("dashboard")
     s = sp.add_parser("asof"); s.add_argument("--version", type=int); s.add_argument("--date"); s.add_argument("--trade", type=int)
     s = sp.add_parser("changes"); s.add_argument("--since", type=int, default=0); s.add_argument("--show", type=int, default=5); s.add_argument("--out")
     s = sp.add_parser("restore"); s.add_argument("--version", type=int, required=True); s.add_argument("--dry", action="store_true")

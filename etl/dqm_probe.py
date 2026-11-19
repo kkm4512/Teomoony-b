@@ -88,7 +88,7 @@ def cmd_snap(a):
         # 11-19: 이어서 버전 테이블에 이 스냅샷을 버전 하나로 쌓는다(dqm_lake build · DQM ④). 실패해도 스냅샷 · 비교는 남는다.
         import subprocess
         print("\n버전 테이블(dqm_lake build):", flush=True)
-        for 할 in (["build"], ["check"], ["expire", "--days", "30"]):   # 쌓기 → 유실 검증 → 보관 1개월 정리
+        for 할 in (["build"], ["check"], ["expire", "--days", "30"], ["dashboard"]):   # 쌓기 → 유실 검증 → 보관 1개월 정리 → 관리자 화면 요약
             r = subprocess.run([sys.executable, os.path.join(HERE, "dqm_lake.py")] + 할, cwd=HERE)
             if r.returncode not in (0, 3): print(f"  !! dqm_lake {할[0]} 종료코드 {r.returncode}", flush=True)
 
