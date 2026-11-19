@@ -145,6 +145,7 @@ def seed_lawd(cur, conn):
 
 def fetch(url, key, sgg, ym, retries=3):
     out, page, 쉼 = [], 1, 0
+    fetch.전체 = None
     while True:
         p = {"serviceKey": key, "LAWD_CD": sgg, "DEAL_YMD": ym,
              "numOfRows": "1000", "pageNo": str(page)}
@@ -170,6 +171,7 @@ def fetch(url, key, sgg, ym, retries=3):
         out += items
         tot = x.findtext(".//totalCount")
         tot = int(tot) if tot and tot.isdigit() else len(out)
+        fetch.전체 = tot      # 11-20: 원천이 말한 '전체 건수'(totalCount) — DQM ① 이 받은 줄 수와 견준다
         if page * 1000 >= tot: break
         page += 1; time.sleep(0.12)
     return out, "OK"

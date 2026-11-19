@@ -77,7 +77,8 @@ def cmd_snap(a):
                 name = f"{kind}_{sgg}_{ym}"
                 body = json.dumps(rows, ensure_ascii=False, sort_keys=True)
                 open(os.path.join(out, name + ".json"), "w", encoding="utf-8").write(body)
-                man["parts"][name] = {"status": st, "rows": len(rows), "sha256": hashlib.sha256(body.encode()).hexdigest()}
+                man["parts"][name] = {"status": st, "rows": len(rows), "sha256": hashlib.sha256(body.encode()).hexdigest(),
+                                      "total": getattr(fetch, "전체", None)}   # 11-20: 원천이 말한 전체 건수(받은 줄 수와 같아야 한다)
                 print(f"  {name}: {st} · {len(rows):,}줄", flush=True)
                 if st != "OK": print(f"  !! {name} 받기 실패 — 이 묶음은 비교에서 뺀다", flush=True)
                 time.sleep(0.2)
@@ -88,7 +89,7 @@ def cmd_snap(a):
         # 11-19: 이어서 버전 테이블에 이 스냅샷을 버전 하나로 쌓는다(dqm_lake build · DQM ④). 실패해도 스냅샷 · 비교는 남는다.
         import subprocess
         print("\n버전 테이블(dqm_lake build):", flush=True)
-        for 할 in (["build"], ["check"], ["expire", "--days", "30"], ["dashboard"]):   # 쌓기 → 유실 검증 → 보관 1개월 정리 → 관리자 화면 요약
+        for 할 in (["build"], ["check"], ["expire", "--days", "30"], ["dashboard"], ["trace"]):   # 쌓기 → 유실 검증 → 보관 1개월 정리 → 관리자 화면 요약 → 한 거래 따라가기
             r = subprocess.run([sys.executable, os.path.join(HERE, "dqm_lake.py")] + 할, cwd=HERE)
             if r.returncode not in (0, 3): print(f"  !! dqm_lake {할[0]} 종료코드 {r.returncode}", flush=True)
 

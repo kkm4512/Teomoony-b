@@ -274,7 +274,9 @@ def cmd_dashboard(a):
         d, m = load(s); ps = m["parts"]
         스냅.append({"snap": s, "at": m.get("at"), "묶음": len(ps), "OK": sum(1 for p in ps.values() if p["status"] == "OK"),
                     "줄": sum(p["rows"] for p in ps.values()),
-                    "묶음들": [{"name": n, "status": p["status"], "rows": p["rows"], "sha": p["sha256"][:12]} for n, p in sorted(ps.items())] if s == 스냅샷들()[-1] else None})
+                    "전체수맞음": sum(1 for p in ps.values() if p.get("total") is not None and p["total"] == p["rows"]),
+                    "전체수기록": sum(1 for p in ps.values() if p.get("total") is not None),
+                    "묶음들": [{"name": n, "status": p["status"], "rows": p["rows"], "total": p.get("total"), "sha": p["sha256"][:12]} for n, p in sorted(ps.items())] if s == 스냅샷들()[-1] else None})
     # ④ 버전 · 검증 · 변경
     op수 = collections.defaultdict(collections.Counter)
     for x in ch: op수[x["version"]][x["op"] + ("_애매" if x["amb"] else "") + ("_늦게" if x["late"] else "")] += 1
@@ -293,12 +295,76 @@ def cmd_dashboard(a):
         if x["op"] == "I": e["값"] = 줄요약(x["after_json"])
         elif x["op"] == "U": a_, b_ = json.loads(x["before_json"]), json.loads(x["after_json"]); e["바뀜"] = {k: [a_.get(k), b_.get(k)] for k in (x["changed_cols"] or "").split(",") if k}
         이력[x["trade_id"]].append(e)
-    out = {"만든때": D.datetime.now().isoformat(timespec="seconds"), "범위": "서울 강남 · 송파 · 노원 × 최근 3개월 × 아파트 매매 · 전월세",
+    원본예 = None
+    if 스냅샷들():
+        d0, m0 = load(스냅샷들()[-1]); n0 = sorted(n for n, p in m0["parts"].items() if p["status"] == "OK" and p["rows"])[0]
+        원본예 = {"묶음": n0, "줄": 묶음줄(d0, n0)[0]}
+    out = {"만든때": D.datetime.now().isoformat(timespec="seconds"), "범위": "서울 강남 · 송파 · 노원 × 최근 3개월 × 아파트 매매 · 전월세", "원본예": 원본예,
            "스냅샷": 스냅, "버전": 버전, "바뀐칸": 바뀐칸수.most_common(12), "U예": U예, "이력": {str(k): v for k, v in 이력.items()},
            "보관일": 30}
     p = os.path.abspath(os.path.join(LAKE, "..", "dashboard.json"))
     tmp = p + ".tmp"; json.dump(out, open(tmp, "w", encoding="utf-8"), ensure_ascii=False); os.replace(tmp, p)
     print(f"→ {p} · 버전 {len(버전)} · 스냅샷 {len(스냅)} · U 예 {len(U예)} · 거래 {len(이력):,} · {os.path.getsize(p)/1024:.0f}KB")
+
+
+비교칸 = ("umd_nm", "jibun", "bld_nm", "bld_dong", "deal_ymd", "deal_amount", "deposit", "monthly_rent", "exclu_use_ar", "floor_no",
+         "build_year", "dealing_gbn", "cdeal_type", "rgst_date")
+
+
+def 적재될값(kind, sgg, r):
+    """원천 줄 → load_rtms 가 적재DB 에 넣는 값(비교칸만). 키 칸은 load_rtms.키값 그대로 · 나머지는 load_rtms 의 같은 변환(money · num · pick)."""
+    from load_rtms import 키값, pick, num
+    v = 키값(kind, sgg, r)
+    v.update(build_year=num(pick(r, "buildYear"), int), dealing_gbn=pick(r, "dealingGbn"), cdeal_type=pick(r, "cdealType"), rgst_date=pick(r, "rgstDate"))
+    return {k: v.get(k) for k in 비교칸}
+
+
+def 같은값(a, b):
+    if a in (None, "") and b in (None, ""): return True
+    if a is None or b is None: return False
+    try: return abs(float(a) - float(b)) < 1e-6
+    except (TypeError, ValueError): return str(a).strip() == str(b).strip()
+
+
+def cmd_trace(a):
+    """한 거래 따라가기 자료 → data/dqm/trace.json: 마지막 스냅샷의 원천 줄마다 ① 원천 값 · ② 적재DB 의 같은 줄(load_rtms 와 같은 순번 키) 칸 비교 · ④ 버전 테이블 거래 번호.
+    ③ 등급은 화면이 적재 번호(trade_sk)로 그때그때 적재DB 에서 읽는다."""
+    from load_rtms import 묶음키들
+    from svc_publish import env as svc_env, ms_conn
+    cat = 카탈로그(); st = 표(cat, "rtms_state", STATE)
+    snap = 스냅샷들()[-1]; d, m = load(snap)
+    ids = collections.defaultdict(lambda: collections.defaultdict(list))   # 묶음 → 줄해시 → 거래 번호들
+    for x in sorted(읽기(st), key=lambda x: x["trade_id"]): ids[f"{x['kind']}_{x['sgg']}_{x['ym']}"][x["row_hash"]].append(x["trade_id"])
+    cur = ms_conn(svc_env()).cursor(); cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
+    요약 = collections.defaultdict(collections.Counter); 거래 = {}; 다른예 = collections.defaultdict(list); 칸다름 = collections.Counter()
+    for name, p in sorted(m["parts"].items()):
+        if p["status"] != "OK": continue
+        kind, sgg, ym = name.rsplit("_", 2)
+        cur.execute(f"SELECT trade_sk, nat_key, {', '.join(비교칸)} FROM silver.rtms_trade WHERE trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
+        db = {bytes(x[1]): (x[0], dict(zip(비교칸, x[2:]))) for x in cur.fetchall()}
+        c = 요약[kind]
+        for r, base, nat, _ in 묶음키들(kind, sgg, 묶음줄(d, name)):
+            c["원천줄"] += 1
+            pool = ids[name][row_hash(r)]; tid = pool.pop(0) if pool else None
+            c["버전테이블에있음"] += tid is not None
+            e = {"k": kind, "s": sgg, "m": ym, "t": tid, "원천": {k: v for k, v in r.items() if v not in (None, "")}}
+            if nat in db:
+                sk, dv = db[nat]; c["적재에있음"] += 1; ev = 적재될값(kind, sgg, r)
+                비교 = [[k, ev[k], (float(dv[k]) if hasattr(dv[k], "is_finite") else dv[k]), 같은값(ev[k], dv[k])] for k in 비교칸 if not (ev[k] in (None, "") and dv[k] in (None, ""))]
+                다 = all(x[3] for x in 비교); c["칸모두같음" if 다 else "칸다름"] += 1
+                if not 다:
+                    for x in 비교:
+                        if not x[3]: 칸다름[x[0]] += 1
+                    if len(다른예[kind]) < 5: 다른예[kind].append(tid)
+                e.update(sk=sk, 비교=비교)
+            else: c["적재에없음"] += 1
+            if tid is not None: 거래[str(tid)] = e
+    out = {"만든때": D.datetime.now().isoformat(timespec="seconds"), "snap": snap, "요약": {k: dict(v) for k, v in 요약.items()},
+           "칸다름": 칸다름.most_common(), "다른예": dict(다른예), "거래": 거래}
+    p = os.path.abspath(os.path.join(LAKE, "..", "trace.json")); tmp = p + ".tmp"
+    json.dump(out, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, default=str); os.replace(tmp, p)
+    for k, v in 요약.items(): print(f"  {k}: {dict(v)}")
+    print(f"→ {p} · 거래 {len(거래):,} · 칸 다름 {dict(칸다름)} · {os.path.getsize(p)/1024:.0f}KB")
 
 
 def cmd_restore(a):
@@ -347,7 +413,7 @@ def cmd_expire(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
-    sp.add_parser("build"); sp.add_parser("versions"); sp.add_parser("check"); sp.add_parser("dashboard")
+    sp.add_parser("build"); sp.add_parser("versions"); sp.add_parser("check"); sp.add_parser("dashboard"); sp.add_parser("trace")
     s = sp.add_parser("asof"); s.add_argument("--version", type=int); s.add_argument("--date"); s.add_argument("--trade", type=int)
     s = sp.add_parser("changes"); s.add_argument("--since", type=int, default=0); s.add_argument("--show", type=int, default=5); s.add_argument("--out")
     s = sp.add_parser("restore"); s.add_argument("--version", type=int, required=True); s.add_argument("--dry", action="store_true")
