@@ -46,3 +46,7 @@ deploy/sql/_버림_*
 data/kapt_cost_xlsx/
 etl/_export/sbx/
 data/region_code/
+
+# 2026-11-19 DQM ④: 버전 테이블(Iceberg) 창고 · 원천 스냅샷 · 작업 큐가 쓰는 파이썬 도구(pyiceberg · duckdb)
+data/dqm/
+data/pylib312/

@@ -85,6 +85,12 @@ def cmd_snap(a):
     print(f"스냅샷 {out} · 묶음 {len(man['parts'])} · 줄 {sum(p['rows'] for p in man['parts'].values()):,}")
     if getattr(a, "diff", False):   # 11-13: 스냅샷 바로 뒤에 비교(일정 두 줄이 밀려 함께 걸리면 비교가 먼저 돌던 것)
         print(); a.a, a.b = "prev", "latest"; cmd_diff(a)
+        # 11-19: 이어서 버전 테이블에 이 스냅샷을 버전 하나로 쌓는다(dqm_lake build · DQM ④). 실패해도 스냅샷 · 비교는 남는다.
+        import subprocess
+        print("\n버전 테이블(dqm_lake build):", flush=True)
+        for 할 in (["build"], ["check"], ["expire", "--days", "30"]):   # 쌓기 → 유실 검증 → 보관 1개월 정리
+            r = subprocess.run([sys.executable, os.path.join(HERE, "dqm_lake.py")] + 할, cwd=HERE)
+            if r.returncode not in (0, 3): print(f"  !! dqm_lake {할[0]} 종료코드 {r.returncode}", flush=True)
 
 
 def load(snap):
@@ -95,6 +101,47 @@ def load(snap):
     d = snap if os.path.isabs(snap) else os.path.join(ROOT, snap)
     man = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
     return d, man
+
+
+def 묶음비교(A, B):
+    """한 묶음의 어제 줄들 A · 오늘 줄들 B → 같음 · U · D · I (2026-11-19 — cmd_diff 와 dqm_lake 가 같이 쓴다).
+    돌려줌: {"same": [(ra, rb)], "U": [(ra, rb, tag)], "D": [(ra, 애매)], "I": [(rb, 애매)]}
+      tag = "U" | "U(늦게 채워진 칸)" · 애매 = 같은 정체성에 짝 후보가 여럿이라 D + I 로 둔 것(정정 후보)."""
+    ca = collections.Counter(row_hash(r) for r in A); cb = collections.Counter(row_hash(r) for r in B)
+    byh_a = {row_hash(r): r for r in A}; byh_b = {row_hash(r): r for r in B}
+    out = {"same": [], "U": [], "D": [], "I": []}
+    for h, n in (ca & cb).items(): out["same"] += [(byh_a[h], byh_b[h])] * n
+    minus = ca - cb; plus = cb - ca
+    g = collections.defaultdict(lambda: [[], []])
+    for h, n in minus.items(): g[id_hash(byh_a[h])][0] += [h] * n
+    for h, n in plus.items(): g[id_hash(byh_b[h])][1] += [h] * n
+    def 애매로(m, p):
+        k2 = min(len(m), len(p))
+        out["D"] += [(byh_a[h], i < k2) for i, h in enumerate(m)]; out["I"] += [(byh_b[h], i < k2) for i, h in enumerate(p)]
+    left_m, left_p = [], []
+    for idh, (m, p) in g.items():
+        if len(m) == 1 and len(p) == 1: out["U"].append((byh_a[m[0]], byh_b[p[0]], "U"))
+        elif m and not p: left_m += m
+        elif p and not m: left_p += p
+        else: 애매로(m, p)
+    # 2차 짝: 늦게 채워지는 칸(LATE)이 옛 줄에서 비어 있던 것만, 그 칸을 빼고 다시
+    g2 = collections.defaultdict(lambda: [[], []])
+    for h in left_m:
+        r = byh_a[h]
+        if all(not norm(r.get(k) or next((v for kk, v in r.items() if kk.lower() == k), "")) for k in LATE):
+            g2[id_hash(r, LATE)][0].append(h)
+        else: out["D"].append((r, False))
+    for h in left_p: g2[id_hash(byh_b[h], LATE)][1].append(h)
+    for idh, (m, p) in g2.items():
+        if len(m) == 1 and len(p) == 1: out["U"].append((byh_a[m[0]], byh_b[p[0]], "U(늦게 채워진 칸)"))
+        elif m and not p: out["D"] += [(byh_a[h], False) for h in m]
+        elif p and not m: out["I"] += [(byh_b[h], False) for h in p]
+        else: 애매로(m, p)
+    return out
+
+
+def 바뀐칸(ra, rb):
+    return sorted(k for k in set(ra) | set(rb) if norm(ra.get(k)) != norm(rb.get(k)))
 
 
 def cmd_diff(a):
@@ -108,40 +155,16 @@ def cmd_diff(a):
             tot["묶음_뺌(받기실패)"] += 1; continue
         A = json.load(open(os.path.join(da, name + ".json"), encoding="utf-8"))
         B = json.load(open(os.path.join(db, name + ".json"), encoding="utf-8"))
-        ca = collections.Counter(row_hash(r) for r in A); cb = collections.Counter(row_hash(r) for r in B)
-        byh_a = {row_hash(r): r for r in A}; byh_b = {row_hash(r): r for r in B}
-        minus = ca - cb; plus = cb - ca
         kind = name.rsplit("_", 2)[0]
-        c = per[kind]; c["어제줄"] += len(A); c["오늘줄"] += len(B); c["같음"] += sum((ca & cb).values())
-        g = collections.defaultdict(lambda: [[], []])
-        for h, n in minus.items(): g[id_hash(byh_a[h])][0] += [h] * n
-        for h, n in plus.items(): g[id_hash(byh_b[h])][1] += [h] * n
-        def u(ra, rb, tag="U"):
-            c[tag] += 1
-            ch = sorted(k for k in set(ra) | set(rb) if norm(ra.get(k)) != norm(rb.get(k)))
+        c = per[kind]; c["어제줄"] += len(A); c["오늘줄"] += len(B)
+        o = 묶음비교(A, B)
+        c["같음"] += len(o["same"])
+        for ra, rb, tag in o["U"]:
+            c[tag] += 1; ch = 바뀐칸(ra, rb)
             for k in ch: fields[k] += 1
             if len(ex) < 8: ex.append((name, {k: (ra.get(k), rb.get(k)) for k in ch}))
-        left_m, left_p = [], []
-        for idh, (m, p) in g.items():
-            if len(m) == 1 and len(p) == 1: u(byh_a[m[0]], byh_b[p[0]])
-            elif m and not p: left_m += m
-            elif p and not m: left_p += p
-            else:
-                k2 = min(len(m), len(p)); c["애매(짝 후보 여럿)"] += k2; c["D"] += len(m) - k2; c["I"] += len(p) - k2
-        # 2차 짝: 늦게 채워지는 칸(LATE)이 옛 줄에서 비어 있던 것만, 그 칸을 빼고 다시
-        g2 = collections.defaultdict(lambda: [[], []])
-        for h in left_m:
-            r = byh_a[h]
-            if all(not norm(r.get(k) or next((v for kk, v in r.items() if kk.lower() == k), "")) for k in LATE):
-                g2[id_hash(r, LATE)][0].append(h)
-            else: c["D"] += 1
-        for h in left_p: g2[id_hash(byh_b[h], LATE)][1].append(h)
-        for idh, (m, p) in g2.items():
-            if len(m) == 1 and len(p) == 1: u(byh_a[m[0]], byh_b[p[0]], "U(늦게 채워진 칸)")
-            elif m and not p: c["D"] += len(m)
-            elif p and not m: c["I"] += len(p)
-            else:
-                k2 = min(len(m), len(p)); c["애매(짝 후보 여럿)"] += k2; c["D"] += len(m) - k2; c["I"] += len(p) - k2
+        c["애매(짝 후보 여럿)"] += sum(1 for _, amb in o["D"] if amb)
+        c["D"] += sum(1 for _, amb in o["D"] if not amb); c["I"] += sum(1 for _, amb in o["I"] if not amb)
     print(f"A {ma['at']}  →  B {mb['at']}")
     for kind, c in sorted(per.items()):
         print(f"  {kind}: 어제 {c['어제줄']:,} · 오늘 {c['오늘줄']:,} · 같음 {c['같음']:,} · I {c['I']:,} · U {c['U']:,} + 늦게채움 {c['U(늦게 채워진 칸)']:,} · D {c['D']:,} · 애매 {c['애매(짝 후보 여럿)']:,}")
