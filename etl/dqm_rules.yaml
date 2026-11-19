@@ -1,0 +1,149 @@
+# DQM ③ 규칙 표 — 서울 실거래(silver.rtms_trade) · 버전 1 (2026-11-19 사장님 "추천대로")
+# 규칙은 코드에 박지 않고 여기에만 둔다. etl/dqm_rules.py 가 이 표를 읽어 줄마다 걸린 규칙 · 처리 · 등급을 남긴다(ops.dqm_rule_*).
+# 처리(결정 5): 버림 = 형식이 깨져 쓸 수 없음 · 격리 = 제공에서 빼되 지우지 않고 사람이 봄
+#              보완 = 다른 공식 원천으로 확실히 채울 수 있을 때만(원본은 덮지 않고 별도 칸 + 출처) · 표시 = 진짜 값이라 그대로 두고 표시만
+# 등급: 격리 = 격리 · 버림 규칙에 걸림 / C = 위치나 핵심 칸을 원천이 안 줌(등급C · 보완 규칙) / B = 표시 규칙만 / A = 아무 규칙에도 안 걸림
+# sql = silver.rtms_trade 를 t 로 둔 WHERE 조건. 종류 = trade_kind 목록 또는 종류묶음 이름(없으면 전부). '근거' 는 2026-11-19 밤 서울 11,090,452줄 실측.
+
+버전: 1
+대상: silver.rtms_trade
+종류묶음:
+  주거매매: [APT_TRADE_DEV, RH_TRADE, OFFI_TRADE, SH_TRADE, SILV_TRADE]
+  주거전월세: [APT_RENT, RH_RENT, OFFI_RENT, SH_RENT]
+  지번가림종류: [SH_TRADE, SH_RENT, LAND_TRADE, NRG_TRADE]
+  단지종류: [APT_TRADE_DEV, APT_RENT, RH_TRADE, RH_RENT, OFFI_TRADE, OFFI_RENT]
+
+# 규칙 전에 한 번 돌리는 준비(같은 연결의 임시표) — R07 의 '같은 단지 · 같은 해 · 비슷한 면적(5㎡ 칸)' 중앙값
+준비:
+  - |
+    IF OBJECT_ID('tempdb..#r07') IS NOT NULL DROP TABLE #r07;
+    WITH t AS (SELECT trade_sk, match_complex_id, deal_year, 칸 = CAST(FLOOR(exclu_use_ar / 5) AS INT), deal_amount
+                 FROM silver.rtms_trade WITH (NOLOCK)
+                WHERE trade_kind = 'APT_TRADE_DEV' AND ISNULL(cdeal_type, '') = '' AND match_complex_id IS NOT NULL AND deal_amount > 0 AND exclu_use_ar > 0),
+         m AS (SELECT trade_sk, deal_amount,
+                      중앙 = PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY deal_amount) OVER (PARTITION BY match_complex_id, deal_year, 칸),
+                      n = COUNT(*) OVER (PARTITION BY match_complex_id, deal_year, 칸) FROM t)
+    SELECT trade_sk, 비 = deal_amount / 중앙 INTO #r07 FROM m WHERE n >= 5;
+    CREATE CLUSTERED INDEX ix ON #r07 (trade_sk);
+
+규칙:
+  # ── 형식 (②구간 · 지금 0줄 — 지키는 문) ──
+  - id: R01
+    이름: 계약일이 날짜가 아님
+    처리: 버림
+    sql: t.deal_ymd IS NULL OR LEN(t.deal_ymd) <> 8 OR ISDATE(t.deal_ymd) = 0
+    근거: 0
+
+  - id: R02
+    이름: 매매 금액 없음 · 0 이하
+    처리: 버림
+    sql: t.is_rent = 0 AND ISNULL(t.deal_amount, 0) <= 0
+    근거: 0
+
+  - id: R03
+    이름: 계약일이 미래
+    처리: 격리
+    sql: t.deal_ymd > CONVERT(CHAR(8), DATEADD(HOUR, 9, SYSDATETIME()), 112)
+    근거: 0
+
+  - id: R04
+    이름: 전월세 보증금 · 월세 둘 다 0
+    처리: 격리
+    종류: 주거전월세
+    sql: ISNULL(t.deposit, 0) = 0 AND ISNULL(t.monthly_rent, 0) = 0
+    근거: 1
+
+  # ── 범위 이상치 ──
+  - id: R05
+    이름: 주거 매매 금액 1천만원 미만
+    처리: 격리
+    종류: 주거매매
+    sql: t.deal_amount > 0 AND t.deal_amount < 10000000
+    근거: 27        # 토지 · 상업은 지분 거래가 많아 뺌
+
+  - id: R06
+    이름: 아파트 매매 ㎡당 100만원 미만
+    처리: 격리
+    종류: [APT_TRADE_DEV]
+    sql: t.exclu_use_ar > 0 AND t.deal_amount / t.exclu_use_ar < 1000000
+    근거: 124       # ㎡당 상한은 두지 않는다(최고가 ㎡당 1.06억도 진짜)
+
+  - id: R07a
+    이름: 같은 단지 · 같은 해 · 비슷한 면적 중앙값의 1/3 미만 또는 3배 초과
+    처리: 격리
+    종류: [APT_TRADE_DEV]
+    sql: "EXISTS (SELECT 1 FROM #r07 r WHERE r.trade_sk = t.trade_sk AND (r.비 < 1.0 / 3 OR r.비 > 3))"   # '#' 때문에 따옴표(없으면 YAML 이 주석으로 읽는다)
+    근거: 103
+
+  - id: R07b
+    이름: 같은 단지 · 같은 해 · 비슷한 면적 중앙값의 반값 미만 또는 2배 초과(1/3 · 3배 안쪽)
+    처리: 표시
+    종류: [APT_TRADE_DEV]
+    sql: "EXISTS (SELECT 1 FROM #r07 r WHERE r.trade_sk = t.trade_sk AND ((r.비 < 0.5 AND r.비 >= 1.0 / 3) OR (r.비 > 2 AND r.비 <= 3)))"   # '#' 때문에 따옴표(없으면 YAML 이 주석으로 읽는다)
+    근거: 262
+
+  - id: R08
+    이름: 건축년도가 계약연도보다 2년 넘게 뒤
+    처리: 표시      # 거래는 진짜 · 건축년도 칸이 재건축 뒤 새 해로 바뀐 것으로 보임
+    sql: t.build_year > t.deal_year + 2
+    근거: 13052
+
+  - id: R09
+    이름: 전용면적 10㎡ 미만
+    처리: 표시
+    종류: [APT_TRADE_DEV, RH_TRADE, OFFI_TRADE, SH_TRADE, SILV_TRADE, APT_RENT, RH_RENT, OFFI_RENT, SH_RENT]
+    sql: t.exclu_use_ar < 10
+    근거: 700
+
+  - id: R10
+    이름: 건축년도 1900년 전
+    처리: 표시
+    sql: t.build_year < 1900
+    근거: 265
+
+  # ── 진짜 값 · 표시만 ──
+  - id: R11
+    이름: 해제된 거래
+    처리: 표시
+    sql: t.cdeal_type = 'O'
+    근거: 54096
+
+  - id: R12
+    이름: 직거래
+    처리: 표시
+    sql: t.dealing_gbn = N'직거래'
+    근거: 131266
+
+  - id: R13
+    이름: 지하층(층 음수)
+    처리: 표시
+    sql: t.floor_no < 0
+    근거: 126237
+
+  - id: R14
+    이름: 아주 큰 면적 · 아주 비싼 월세 · 보증금
+    처리: 표시
+    sql: t.exclu_use_ar > 300 OR t.monthly_rent > 10000000 OR t.deposit > 10000000000
+    근거: 1288
+
+  # ── 위치 · 핵심 칸 (등급 C) ──
+  - id: R15
+    이름: 지번 가려짐(필지 · 단지까지 못 감)
+    처리: 등급C
+    종류: 지번가림종류
+    sql: t.jibun_masked = 1
+    근거: 2923174
+
+  - id: R16
+    이름: 면적 · 층을 원천이 안 줌
+    처리: 등급C
+    종류: 지번가림종류
+    sql: t.exclu_use_ar IS NULL OR t.floor_no IS NULL
+
+  # ── 보완 ──
+  - id: R17
+    이름: 단지에 안 이어짐
+    처리: 보완      # 건축물대장(공식 원천)의 지번 · 건물로 다시 잇기 — 이어지면 원본 칸을 덮지 않고 따로 적는다. 못 이으면 등급 C
+    종류: 단지종류
+    sql: t.match_complex_id IS NULL
+    근거: 185064
