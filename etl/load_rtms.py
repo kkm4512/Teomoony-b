@@ -447,14 +447,12 @@ def main():
             # 같은 키가 여럿인 묶음은 k 번째 줄의 값 칸을 원천과 똑같이 맞춘다(예전에 합쳐진 한 줄은 첫 줄 값만 갖고 있다 —
             # 해제만 고치면 '계약 조건이 다른 두 전월세' 중 하나의 값이 사라진다). 하나뿐인 키는 예전처럼 해제 칸만 고친다.
             for r, vals, base, nat in 줄들:
-                if 몇번째[base] > 1:
-                    cols = list(vals.keys())
-                    cur.execute(f"UPDATE silver.rtms_trade SET {', '.join(c + ' = %s' for c in cols)}, cdeal_type = %s, cdeal_day = %s "
-                                "WHERE nat_key = %s", tuple(vals[c] for c in cols) + (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
-                else:
-                    cur.execute("UPDATE silver.rtms_trade SET cdeal_type=%s, cdeal_day=%s "
-                                "WHERE nat_key=%s",
-                                (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
+                # ★ 2026-11-20 (DQM ② 칸 비교 · 사장님 ㄱㄱ): 키가 같은 줄을 다시 받으면 **원천의 값 칸을 전부 원천대로** 고친다.
+                #   예전엔 해제 칸만 고쳐서, 원천이 나중에 채운 등기일 같은 칸이 적재DB 에 안 들어왔다(11-20 표본 24줄).
+                #   단지 · 필지 잇기 칸(match_*)은 빼고 — 다시 잇기(rematch)가 채운 값을 받을 때마다 지우지 않게.
+                cols = [c for c in vals if not c.startswith("match_")]
+                cur.execute(f"UPDATE silver.rtms_trade SET {', '.join(c + ' = %s' for c in cols)}, cdeal_type = %s, cdeal_day = %s "
+                            "WHERE nat_key = %s", tuple(vals[c] for c in cols) + (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
                 없음 = cur.rowcount == 0      # ★ 아래 SELECT 가 rowcount 를 바꾸므로 먼저 잡아 둔다
                 if 없음 and vals["bld_dong"]:
                     미룸.append((nat, vals, pick(r,"cdealType"), pick(r,"cdealDay"))); continue
