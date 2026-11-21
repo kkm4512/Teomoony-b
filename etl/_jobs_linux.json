@@ -197,5 +197,30 @@
     "python",
     "ms_q.py",
     "../deploy/sql/963_probe_ui1121.sql"
+  ],
+  "zq-probe-cx-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_cx1121.sql"
+  ],
+  "zq-probe-oldjibun-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_oldjibun1121.sql"
+  ],
+  "zq-probe-banpo-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_banpo1121.sql"
+  ],
+  "zq-sql-425-par": [
+    "sh",
+    "-c",
+    "python ms_q.py ../deploy/sql/425_trade_aptseq.sql && python ms_q.py ../deploy/sql/963_probe_aptseq_dry.sql"
+  ],
+  "zq-apply-aptseq-par": [
+    "sh",
+    "-c",
+    "python ms_q.py ../deploy/sql/963_apply_aptseq.sql && python svc_publish.py --mode ids --kinds detail --workers 4 --ids 37903 39889 40737 416375"
   ]
 }

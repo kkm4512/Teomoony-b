@@ -274,6 +274,8 @@ def match_pass(cur, conn, name2code_all, unknown=None):
     conn.commit()
     if r:
         print(f"  회차 {r[0]} · 고쳐 붙음 {r[1]:,}건 · 새로 붙음 {r[2]:,}건 · {r[4]}초")
+    # ★ 2026-11-21 (425 · DQM '단지로 찾기' 경희궁자이): 필지 · K-apt 지번으로 못 붙은 거래 → 같은 aptSeq 의 뒤 거래가 붙은 단지로
+    cur.execute("IF OBJECT_ID('gold.usp_match_trade_aptseq') IS NOT NULL EXEC gold.usp_match_trade_aptseq"); conn.commit()
     cur.execute("EXEC gold.usp_refresh_complex_trade"); conn.commit()
     cur.execute("EXEC gold.usp_refresh_complex_alias"); cur.fetchall(); conn.commit()   # 285 실거래 이름
     st.done()
