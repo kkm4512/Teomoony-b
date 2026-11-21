@@ -4,7 +4,9 @@
 
   규칙은 etl/dqm_rules.yaml 에만 있다(코드에 박지 않는다). 이 프로그램은 표를 읽어 silver.rtms_trade 의 줄마다
   어떤 규칙에 걸렸는지 적고(ops.dqm_rule_hit), 규칙별 · 종류별로 세고(ops.dqm_rule_stat · ops.dqm_grade_stat), 규칙마다 예시를 남긴다.
-  ★ 원본(silver.rtms_trade)은 읽기만 한다. 격리 · 버림도 지금은 '표시' 까지 — 화면 · 제공에서 실제로 빼는 것은 따로 정한다.
+  ★ run 은 원본(silver.rtms_trade)을 읽기만 한다.
+  ★ apply(2026-11-21 · 423): 가장 최근 run 에서 격리 · 버림 규칙에 걸린 줄을 ops.dqm_quarantine 로 옮기고 silver 에서 뺀다(지우지 않음).
+    한 번에 --max(기본 2,000)줄 넘으면 멈춘다 — 규칙이 잘못 고쳐져 대량으로 걸리는 것을 막는다. 풀기는 ops.usp_dqm_release.
 
   python dqm_rules.py run [--rules dqm_rules.yaml]   규칙 실행 · 측정(약 수 분)
   python dqm_rules.py show <trade_sk>               그 줄이 걸린 규칙 · 등급(가장 최근 run)
@@ -97,6 +99,55 @@ def cmd_run(a):
     print(f"[{time.strftime('%H:%M:%S')}] 끝 run {run} · {n:,}줄 · {메모} · {(time.time()-t0)/60:.1f}분", flush=True)
 
 
+def cmd_apply(a):
+    import subprocess
+    cur = ms_conn(env()).cursor()
+    cur.execute("SELECT MAX(run_id) FROM ops.dqm_rule_run WHERE 끝 IS NOT NULL"); run = cur.fetchone()[0]
+    cur.execute("SELECT rule_id FROM ops.dqm_rule_stat WHERE run_id = %s AND 처리 IN (N'격리', N'버림')", (run,))
+    규칙 = [r[0] for r in cur.fetchall()]
+    if not 규칙: print(f"run {run}: 격리 규칙 없음"); return
+    목록 = ", ".join(f"'{x}'" for x in 규칙)
+    # 후보 = 이번 run 에 격리 규칙으로 걸렸고 · 아직 silver 에 있고 · 격리 표에 한 번도 안 들어간 줄(풀린 줄은 사람이 진짜라고 본 것 — 다시 안 넣는다)
+    cur.execute(f"""
+        IF OBJECT_ID('tempdb..#q') IS NOT NULL DROP TABLE #q;
+        SELECT h.trade_sk, rule_ids = STRING_AGG(h.rule_id, ',') WITHIN GROUP (ORDER BY h.rule_id)
+          INTO #q FROM ops.dqm_rule_hit h
+         WHERE h.run_id = {run} AND h.rule_id IN ({목록})
+           AND EXISTS (SELECT 1 FROM silver.rtms_trade t WHERE t.trade_sk = h.trade_sk)
+           AND NOT EXISTS (SELECT 1 FROM ops.dqm_quarantine q WHERE q.trade_sk = h.trade_sk)
+         GROUP BY h.trade_sk;
+        SELECT COUNT(*) FROM #q;""")
+    n = cur.fetchone()[0]
+    print(f"[{time.strftime('%H:%M:%S')}] run {run} · 격리 규칙 {','.join(규칙)} · 새로 옮길 줄 {n:,}", flush=True)
+    if n == 0: return
+    if n > a.max and not a.force:
+        print(f"멈춤: {n:,}줄 > 상한 {a.max:,} — 규칙을 확인하고 --force 로 다시"); sys.exit(1)
+    cur.execute("SELECT STRING_AGG(CAST(QUOTENAME(name) AS NVARCHAR(MAX)), ',') WITHIN GROUP (ORDER BY column_id) FROM sys.columns "
+                "WHERE object_id = OBJECT_ID('silver.rtms_trade') AND is_computed = 0")
+    칸 = cur.fetchone()[0]; 칸t = ",".join("t." + c for c in 칸.split(","))
+    cur.execute(f"""
+        SET XACT_ABORT ON; BEGIN TRAN;
+        INSERT ops.dqm_quarantine ({칸}, run_id, rule_ids, 격리시각)
+        SELECT {칸t}, {run}, q.rule_ids, SYSDATETIME() FROM silver.rtms_trade t JOIN #q q ON q.trade_sk = t.trade_sk;
+        DELETE t FROM silver.rtms_trade t JOIN #q q ON q.trade_sk = t.trade_sk
+         WHERE EXISTS (SELECT 1 FROM ops.dqm_quarantine b WHERE b.trade_sk = t.trade_sk AND b.run_id = {run});
+        SELECT @@ROWCOUNT;
+        COMMIT;""")
+    뺌 = cur.fetchone()[0]
+    cur.execute(f"SELECT rule_ids, COUNT(*), COUNT(DISTINCT match_complex_id) FROM ops.dqm_quarantine WHERE run_id = {run} GROUP BY rule_ids ORDER BY 2 DESC")
+    for r in cur.fetchall(): print(f"  {r[0]:20s} {r[1]:>6,}줄 · 단지 {r[2]:,}")
+    cur.execute(f"SELECT DISTINCT match_complex_id FROM ops.dqm_quarantine WHERE run_id = {run} AND match_complex_id IS NOT NULL")
+    단지 = [r[0] for r in cur.fetchall()]
+    print(f"[{time.strftime('%H:%M:%S')}] silver 에서 뺌 {뺌:,}줄 · 이어진 단지 {len(단지):,}", flush=True)
+    # 거래 요약(gold) 다시 세기 + 단지 상세 다시 담기(지도 마커는 매시 발행이 통째로 다시 만든다)
+    t = time.time(); cur.execute("EXEC gold.usp_refresh_complex_trade"); print(f"  거래 요약 다시 셈 {time.time()-t:.0f}초", flush=True)
+    if 단지:
+        f = os.path.join(HERE, "..", "logs", f"dqm_quarantine_ids_{run}.txt")
+        open(f, "w").write("\n".join(map(str, 단지)) + "\n")
+        r = subprocess.run([sys.executable, os.path.join(HERE, "svc_publish.py"), "--mode", "ids", "--kinds", "detail", "--workers", "4", "--ids-file", f])
+        print(f"  상세 다시 담기 끝 rc={r.returncode}", flush=True)
+
+
 def cmd_show(a):
     cur = ms_conn(env()).cursor()
     cur.execute("SELECT MAX(run_id) FROM ops.dqm_rule_run WHERE 끝 IS NOT NULL"); run = cur.fetchone()[0]
@@ -110,5 +161,6 @@ def cmd_show(a):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
     s = sp.add_parser("run"); s.add_argument("--rules", default="dqm_rules.yaml")
+    s = sp.add_parser("apply"); s.add_argument("--max", type=int, default=2000); s.add_argument("--force", action="store_true")
     s = sp.add_parser("show"); s.add_argument("trade_sk", type=int)
     a = ap.parse_args(); globals()["cmd_" + a.cmd](a)

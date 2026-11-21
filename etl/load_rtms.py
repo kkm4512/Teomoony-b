@@ -357,6 +357,14 @@ def main():
 
     unknown = {}
     중단들 = []
+    # ★ 2026-11-21 (DQM ③ 격리 적용 · 423): 규칙으로 격리한 줄(ops.dqm_quarantine · 안 풀린 것)은 다시 넣지 않는다.
+    #   원천이 그 줄을 고치면 키가 바뀌어 새 줄로 들어오고, 다음 규칙 run 이 다시 본다.
+    cur.execute("SELECT OBJECT_ID('ops.dqm_quarantine')")
+    격리키 = set()
+    if cur.fetchone()[0]:
+        cur.execute("SELECT nat_key FROM ops.dqm_quarantine WHERE 풀림 IS NULL AND sgg_cd = %s", (args.sgg,))
+        격리키 = {bytes(r[0]) for r in cur.fetchall()}
+    격리건너뜀 = 0
     for kind in kinds:
         url, is_rent, masked = KINDS[kind]
         got = new = late = 0
@@ -454,6 +462,8 @@ def main():
                 cur.execute(f"UPDATE silver.rtms_trade SET {', '.join(c + ' = %s' for c in cols)}, cdeal_type = %s, cdeal_day = %s "
                             "WHERE nat_key = %s", tuple(vals[c] for c in cols) + (pick(r,"cdealType"), pick(r,"cdealDay"), nat))
                 없음 = cur.rowcount == 0      # ★ 아래 SELECT 가 rowcount 를 바꾸므로 먼저 잡아 둔다
+                if 없음 and nat in 격리키:
+                    격리건너뜀 += 1; continue
                 if 없음 and vals["bld_dong"]:
                     미룸.append((nat, vals, pick(r,"cdealType"), pick(r,"cdealDay"))); continue
                 if 없음:
@@ -488,6 +498,8 @@ def main():
                                 "cdeal_type = %s, cdeal_day = %s WHERE trade_sk = %s",
                                 (nat,) + tuple(vals[c] for c in cols) + (cdt, cdd, 옛줄))
                     쓴.add(옛줄); late += 1
+                elif nat in 격리키:
+                    격리건너뜀 += 1
                 else:
                     cur.execute(
                         f"INSERT INTO silver.rtms_trade (nat_key, {', '.join(cols)}, cdeal_type, cdeal_day) "
@@ -499,6 +511,7 @@ def main():
         print(tag + (f"   [중단: {halted}]" if halted else ""), flush=True)
         if halted: 중단들.append(f"{kind} {halted}")
 
+    if 격리건너뜀: print(f"  (DQM 격리 중이라 다시 안 넣은 줄 {격리건너뜀:,})", flush=True)
     if getattr(args, "no_match", False):
         print("\n(--no-match: 매칭 패스 건너뜀)")
     else:

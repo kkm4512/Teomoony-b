@@ -22,6 +22,10 @@ sys.path.insert(0, HERE)
 from load_rtms import KINDS, ENV, fetch, load_env, money, num, pick, months, 순번키, 줄순서, 키값, 기본키   # noqa: E402
 
 ROOT = os.path.join(HERE, "..", "data", "dqm", "snap")
+# ★ 11-21 (사장님 "알람은 제외하고 일단 진행해봐" · 범위 넓히기): 강남 · 송파 · 도봉 3구 → 서울 25구 전부(아파트 매매 · 전월세 · 최근 3개월)
+서울25 = ("11110,11140,11170,11200,11215,11230,11260,11290,11305,11320,11350,11380,11410,11440,11470,"
+         "11500,11530,11545,11560,11590,11620,11650,11680,11710,11740")
+보관일 = 35   # 원천 스냅샷 폴더는 35일만 둔다(버전 테이블에 내용이 남는다 · 25구 하루 ≈ 50MB)
 
 # '값' 칸 — 같은 거래라도 바뀔 수 있는 것(가격 · 해제 · 중개 · 등기 · 계약 조건). 정체성 해시에서 뺀다.
 VALUE = {k.lower() for k in (
@@ -83,6 +87,12 @@ def cmd_snap(a):
                 if st != "OK": print(f"  !! {name} 받기 실패 — 이 묶음은 비교에서 뺀다", flush=True)
                 time.sleep(0.2)
     json.dump(man, open(os.path.join(out, "manifest.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    import shutil
+    한계 = (now - D.timedelta(days=보관일)).strftime("%Y%m%d")
+    for x in sorted(os.listdir(ROOT)):
+        if len(x) == 13 and x[:8].isdigit() and x[:8] < 한계:
+            try: shutil.rmtree(os.path.join(ROOT, x)); print(f"  오래된 스냅샷 정리 {x}", flush=True)
+            except OSError as e: print(f"  !! 정리 실패 {x}: {e}", flush=True)
     print(f"스냅샷 {out} · 묶음 {len(man['parts'])} · 줄 {sum(p['rows'] for p in man['parts'].values()):,}")
     if getattr(a, "diff", False):   # 11-13: 스냅샷 바로 뒤에 비교(일정 두 줄이 밀려 함께 걸리면 비교가 먼저 돌던 것)
         print(); a.a, a.b = "prev", "latest"; cmd_diff(a)
@@ -195,7 +205,11 @@ def cmd_db(a):
         c = per[kind]; c["원천줄"] += len(rows); c["원천_nat_key_겹침(합쳐짐)"] += sum(n - 1 for n in api.values() if n > 1)
         c["적재DB줄"] += len(dbr)
         c["둘다"] += sum(1 for k in 지금키 if k in dbk)
-        c["원천에만(아직 안 들어옴)"] += sum(1 for k in 지금키 if k not in dbk)
+        # ★ 11-21: 규칙으로 격리한 줄(ops.dqm_quarantine)은 '안 들어옴' 이 아니라 '격리' 로 센다
+        cur.execute("SELECT nat_key FROM ops.dqm_quarantine WHERE 풀림 IS NULL AND trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
+        qk = {bytes(r[0]) for r in cur.fetchall()}
+        c["원천에만(아직 안 들어옴)"] += sum(1 for k in 지금키 if k not in dbk and k not in qk)
+        c["격리(규칙 · 제공에서 뺌)"] += sum(1 for k in 지금키 if k not in dbk and k in qk)
         stale = [r for k, r in dbk.items() if k not in 지금키]
         c["적재DB에만(원천에서 사라진 옛 줄)"] += len(stale)
         c["그중_해제표시"] += sum(1 for r in stale if r[1])
@@ -227,7 +241,7 @@ def cmd_db(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
-    s = sp.add_parser("snap"); s.add_argument("--sgg", default="11680,11710,11350"); s.add_argument("--months", type=int, default=3)
+    s = sp.add_parser("snap"); s.add_argument("--sgg", default=서울25); s.add_argument("--months", type=int, default=3)
     s.add_argument("--kinds", default="APT_TRADE_DEV,APT_RENT"); s.add_argument("--diff", action="store_true", help="받은 뒤 바로 어제와 비교")
     s2 = sp.add_parser("diff"); s2.add_argument("a"); s2.add_argument("b")
     s3 = sp.add_parser("db"); s3.add_argument("snap")

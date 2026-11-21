@@ -330,6 +330,7 @@ def cmd_trace(a):
     """한 거래 따라가기 자료 → data/dqm/trace.json: 마지막 스냅샷의 원천 줄마다 ① 원천 값 · ② 적재DB 의 같은 줄(load_rtms 와 같은 순번 키) 칸 비교 · ④ 버전 테이블 거래 번호.
     ③ 등급은 화면이 적재 번호(trade_sk)로 그때그때 적재DB 에서 읽는다."""
     from load_rtms import 묶음키들
+    따라구 = {"11680", "11710", "11350"}
     from svc_publish import env as svc_env, ms_conn
     cat = 카탈로그(); st = 표(cat, "rtms_state", STATE)
     snap = 스냅샷들()[-1]; d, m = load(snap)
@@ -342,6 +343,9 @@ def cmd_trace(a):
         kind, sgg, ym = name.rsplit("_", 2)
         cur.execute(f"SELECT trade_sk, nat_key, {', '.join(비교칸)} FROM silver.rtms_trade WHERE trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
         db = {bytes(x[1]): (x[0], dict(zip(비교칸, x[2:]))) for x in cur.fetchall()}
+        # ★ 11-21: 규칙으로 격리한 줄(ops.dqm_quarantine) — 적재DB 에 없는 게 '빠짐' 이 아니라 '격리' 다
+        cur.execute("SELECT nat_key, trade_sk, rule_ids FROM ops.dqm_quarantine WHERE 풀림 IS NULL AND trade_kind = %s AND sgg_cd = %s AND deal_ymd LIKE %s", (kind, sgg, ym + "%"))
+        qd = {bytes(x[0]): (x[1], x[2]) for x in cur.fetchall()}
         c = 요약[kind]
         for r, base, nat, _ in 묶음키들(kind, sgg, 묶음줄(d, name)):
             c["원천줄"] += 1
@@ -357,8 +361,10 @@ def cmd_trace(a):
                         if not x[3]: 칸다름[x[0]] += 1
                     if len(다른예[kind]) < 5: 다른예[kind].append(tid)
                 e.update(sk=sk, 비교=비교)
+            elif nat in qd: c["격리됨"] += 1; e.update(격리={"sk": qd[nat][0], "규칙": qd[nat][1]})
             else: c["적재에없음"] += 1
-            if tid is not None: 거래[str(tid)] = e
+            # ★ 11-21 범위를 서울 25구로 넓힘: 칸 비교 요약은 전부 세고, 한 줄씩 담는 것(화면 '따라가기')은 처음 3구 + 칸이 다른 줄만(파일이 커지지 않게)
+            if tid is not None and (sgg in 따라구 or ("비교" in e and not all(x[3] for x in e["비교"]))): 거래[str(tid)] = e
     out = {"만든때": D.datetime.now().isoformat(timespec="seconds"), "snap": snap, "요약": {k: dict(v) for k, v in 요약.items()},
            "칸다름": 칸다름.most_common(), "다른예": dict(다른예), "거래": 거래}
     p = os.path.abspath(os.path.join(LAKE, "..", "trace.json")); tmp = p + ".tmp"

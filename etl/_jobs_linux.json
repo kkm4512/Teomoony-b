@@ -89,5 +89,113 @@
     "coverage_gate.py",
     "--gap",
     "0"
+  ],
+  "zw-kk-check-par": [
+    "sh",
+    "-c",
+    "for u in '/auth/login?provider=naver&return=%2F%23my' '/auth/me' '/api/me' '/auth/callback?state=x&code=y' '/api/health'; do python -c \"import urllib.request as R,sys,re\nclass N(R.HTTPRedirectHandler):\n  def redirect_request(*a): return None\ntry: r=R.build_opener(N).open('http://localhost:5173'+sys.argv[1],timeout=10); print(sys.argv[1], r.status, r.read(80))\nexcept Exception as e: L=(e.headers.get('Location') or '') if hasattr(e,'headers') else ''; print(sys.argv[1], getattr(e,'code',e), re.sub(r'(client_id|state|nonce|code_challenge)=[^&]*',r'\\\\1=…',L)[-160:])\" \"$u\"; done; docker logs --since 2m teomoony-web 2>&1 | grep -i 'kkmlab\\|error' | tail -5"
+  ],
+  "zt-kk-qa-par": [
+    "sh",
+    "-c",
+    "docker exec teomoony-web node /app/Teomoony-f/tools/qa_kkmlab.js"
+  ],
+  "zp-sso-link-par": [
+    "sh",
+    "-c",
+    "python svc_sql.py ../deploy/svc/pg/_p_nop.sql \"SELECT l.user_id, u.username, u.role, l.\\\"제공자\\\", l.\\\"이름\\\", (l.\\\"사진\\\" IS NOT NULL) AS 사진있음, l.\\\"마지막\\\" FROM app.sso_link l JOIN app.app_user u USING (user_id) ORDER BY 1\""
+  ],
+  "zd-docker-prune-par": [
+    "sh",
+    "-c",
+    "docker system df; echo '--- prune images (사용 안 하는 것만)'; docker image prune -a -f | tail -3; echo '--- prune build cache'; docker builder prune -a -f | tail -2; docker system df; df -h /app/Teomoony"
+  ],
+  "zd-pg-du-par": [
+    "sh",
+    "-c",
+    "docker exec teomoony-svc sh -c 'cd /var/lib/postgresql/data && du -sh base/* pg_wal 2>/dev/null; ls base'; docker exec teomoony-mssql sh -c 'du -sh /var/opt/mssql/data/* 2>/dev/null | sort -h | tail -5'; docker system df -v 2>/dev/null | sed -n \"/VOLUME NAME/,/^$/p\" | sort -k3 -h | tail -8"
+  ],
+  "zd-pg-orphan-rm-par": [
+    "sh",
+    "/app/Teomoony/etl/_pg_orphan_rm.sh"
+  ],
+  "zd-mem-limit-par": [
+    "sh",
+    "-c",
+    "docker update --memory 4096m --memory-swap 4096m teomoony-mssql && docker update --memory 1536m --memory-swap 1536m teomoony-svc && sleep 20 && docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' teomoony-mssql teomoony-svc teomoony-web teomoony-redis teomoony-runner"
+  ],
+  "zu-usage-rebuild-par": [
+    "sh",
+    "-c",
+    "curl -s -m 900 http://localhost:5173/api/_usage_rebuild; echo"
+  ],
+  "zk-rtms-dup-par": [
+    "sh",
+    "-c",
+    "pkill -f 'rtms_g[o].py --from 200601'; sleep 1; pkill -f 'load_rtm[s].py --sgg'; echo done"
+  ],
+  "zi-pylib-iceberg-par": [
+    "sh",
+    "-c",
+    "python --version; pip install --no-cache-dir --upgrade --target /app/Teomoony/data/pylib312 'pyiceberg[sql-sqlite,pyarrow]==0.10.0' 'duckdb==1.4.2' 2>&1 | tail -5; PYTHONPATH=/app/Teomoony/data/pylib312 python -c 'import pyiceberg, duckdb, pyarrow; print(\"OK\", pyiceberg.__version__, duckdb.__version__, pyarrow.__version__)'"
+  ],
+  "zi-pylib-yaml-par": [
+    "sh",
+    "-c",
+    "python -c 'import yaml; print(\"yaml 있음\", yaml.__version__)' 2>/dev/null || (pip install --no-cache-dir --target /app/Teomoony/data/pylib312 'pyyaml==6.0.3' 2>&1 | tail -2; PYTHONPATH=/app/Teomoony/data/pylib312 python -c 'import yaml; print(\"yaml 설치\", yaml.__version__)')"
+  ],
+  "zq-dqm-rules-par": [
+    "sh",
+    "-c",
+    "python dqm_rules.py run && python dqm_rules.py apply && python ms_q.py ../deploy/sql/424_dqm_bowan.sql"
+  ],
+  "cl-rtms-monthly-par": [
+    "python",
+    "rtms_monthly.py"
+  ],
+  "zt-rtms-monthly-dry-par": [
+    "python",
+    "rtms_monthly.py",
+    "--dry"
+  ],
+  "zq-sql-423-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/423_dqm_quarantine.sql"
+  ],
+  "zq-dqm-apply-par": [
+    "python",
+    "dqm_rules.py",
+    "apply"
+  ],
+  "zq-probe-quar-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_quar1121.sql"
+  ],
+  "zq-probe-bowan-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_bowan1121.sql"
+  ],
+  "zq-dqm-bowan-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/424_dqm_bowan.sql"
+  ],
+  "zq-probe-bowan2-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_bowan2.sql"
+  ],
+  "zq-probe-bowan3-par": [
+    "sh",
+    "-c",
+    "python ms_q.py ../deploy/sql/963_probe_bowan3.sql && python ms_q.py ../deploy/sql/424_dqm_bowan.sql"
+  ],
+  "zq-probe-ui-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_ui1121.sql"
   ]
 }
