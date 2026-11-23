@@ -11288,3 +11288,8 @@ v_lawd_map 3개 동         5,568ms → 37ms
   상태 '이동'(대장 단지 생김) → 그 정식 단지 번호로 가라고 안내 · pnu 없는 택지 블록 공고(a · 1,641곳) → 실거래 못 묶음 안내.
   확인: 은마 재건축(900002385) = 필지 실거래 17,727 전부 기존 은마아파트(515486)에 붙음 + 격리 2 · 사라짐 5 / 개포주공1 재건축(900002675) = 5,453 전부 안 이어짐(옛 단지 철거).
   ※ 가단지는 web 전용(Teomoony-f) — SSO 미완 작업과 같은 파일이라 아직 커밋 안 함. 로그인 OAuth 라 내가 화면 직접 못 봄 → 렌더 함수는 표본으로, 값은 DB 질의로 확인(사장님: ROOT 뒷문 안 만들기로).
+- 11-23 16:47 사장님 "DQM 과정만 보여주는데 실제 아키텍처 — 어떤 파일에 저장되고 어떻게 비교하는지도 보고싶어": **DQM '구조(아키텍처)' 탭**.
+  러너가 `dqm_lake.py arch` → `data/dqm/arch.json`(pyiceberg·pyarrow 있는 곳에서 · 웹 Node 는 parquet 못 읽어 파일로 넘김 · 매일 스냅샷 체인 끝에 build→check→expire→dashboard→trace→**arch**).
+  담는 것: 단계별 저장소(① snap JSON+manifest sha256 · ② SQL Server silver.rtms_trade nat_key · ③ dqm_rules.yaml+ops 표 · ④ Iceberg) · 레이크 표별(칸·행·버전수·parquet수+용량·metadata수+용량·현재 스냅샷id) · 비교 5단계(받기→묶음비교→짝짓기→build→check).
+  실측(11-23): ① snap 14개 662파일 144MB(최신 27.3MB · 150묶음 49,607줄) · ② 적재 11,094,923줄 · ④ state 행49,607/버전31/parquet16(32.7MB)/meta95, changes 51,510행/parquet4.0MB, versions 16행. catalog=SQLite 20KB.
+  server.js 구조읽기(mtime 캐시 · dashboard·trace 와 같은 방식) → /api/admin/dqm 에 구조 추가 · app.js DQM구조그리기 · v=20261123dqm14. web 전용이라 커밋 안 함(SSO 작업과 같은 파일).

@@ -260,6 +260,99 @@ def cmd_check(a):
     print("유실 없음" if not bad else f"!! 틀린 곳 {bad}"); sys.exit(1 if bad else 0)
 
 
+
+def _dirstat(path, ext=None):
+    """폴더 안 파일 수 · 합산 바이트 (ext 로 걸러서)"""
+    n = b = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            if ext and not f.endswith(ext): continue
+            try: b += os.path.getsize(os.path.join(root, f)); n += 1
+            except OSError: pass
+    return n, b
+
+
+def cmd_arch(a):
+    """DQM 데이터가 '실제로 어디에 · 어떤 형식으로' 저장되고 어떻게 비교되는지 → data/dqm/arch.json (웹 DQM '구조' 탭).
+    러너(pyiceberg · pyarrow 있는 곳)에서 돈다. 웹은 이 파일만 읽는다."""
+    import datetime as D
+    out = {"만든때": D.datetime.now().isoformat(timespec="seconds"), "단계": [], "레이크": [], "비교": []}
+
+    # ① 원천 스냅샷 (JSON + manifest · 날것)
+    snaps = 스냅샷들()
+    last = snaps[-1] if snaps else None
+    n_all, b_all = _dirstat(SNAP_ROOT)
+    lastdir = os.path.join(SNAP_ROOT, last) if last else None
+    n_last = b_last = rows_last = parts_last = 0
+    if lastdir:
+        n_last, b_last = _dirstat(lastdir)
+        man = json.load(open(os.path.join(lastdir, "manifest.json"), encoding="utf-8"))
+        parts_last = len(man["parts"]); rows_last = sum(p.get("rows", 0) for p in man["parts"].values())
+    out["단계"].append({
+        "단계": "① 원천 수집", "저장소": "PC 파일(JSON)", "경로": "data/dqm/snap/<날짜_시각>/",
+        "형식": "국토부 응답 그대로 묶음마다 .json + manifest.json(건수·sha256)",
+        "스냅샷수": len(snaps), "묶음_한번": parts_last, "행_한번": rows_last,
+        "파일수": n_all, "용량": b_all, "최신": last, "최신용량": b_last,
+        "설명": "원천을 손대지 않고 그대로 보관. manifest 의 sha256·건수로 '받은 그대로인지' 를 잠근다. 35일 지난 폴더는 자동 정리."})
+
+    # ② 적재DB (SQL Server) · ③ 규칙 표
+    try:
+        from svc_publish import env as svc_env, ms_conn
+        cur = ms_conn(svc_env()).cursor(); cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
+        cur.execute("SELECT COUNT_BIG(*) FROM silver.rtms_trade"); silv = cur.fetchone()[0]
+        cur.execute("SELECT COUNT_BIG(*) FROM ops.dqm_quarantine WHERE 풀림 IS NULL"); q = cur.fetchone()[0]
+        out["단계"].append({
+            "단계": "② 수집 → 적재", "저장소": "SQL Server(적재DB)", "경로": "silver.rtms_trade",
+            "형식": "관계형 표 · nat_key(SHA-256) 고유 인덱스로 같은 거래를 한 줄로",
+            "행_전체": int(silv), "설명": "원천을 선별·정규화해 적재. 격리된 줄은 빼서 ops.dqm_quarantine 로(지금 %d줄)." % int(q)})
+        cur.execute("SELECT COUNT(*) FROM ops.dqm_rule_stat WHERE run_id = (SELECT MAX(run_id) FROM ops.dqm_rule_run WHERE 끝 IS NOT NULL)"); nr = cur.fetchone()[0]
+        out["단계"].append({
+            "단계": "③ 적재 → 가공(검증)", "저장소": "PC 파일(YAML) + SQL Server", "경로": "etl/dqm_rules.yaml · ops.dqm_rule_*",
+            "형식": "규칙은 코드 밖 YAML 표(%d개) · 결과는 ops 표(run·stat·hit·grade)" % nr,
+            "설명": "규칙 표를 읽어 줄마다 등급(A/B/C/격리). 원본은 읽기만."})
+    except Exception as e:
+        out["단계"].append({"단계": "② · ③ (적재DB)", "오류": str(e)[:200]})
+
+    # ④ 버전 레이크 (Apache Iceberg)
+    cat = 카탈로그()
+    import sqlite3
+    try:
+        cdb = sqlite3.connect(os.path.join(LAKE, "catalog.db"))
+        cat_tbls = [r[0] for r in cdb.execute("SELECT table_name FROM iceberg_tables")]
+    except Exception: cat_tbls = []
+    for name, schema, 설명 in (
+        ("rtms_state", STATE, "지금 상태 — 거래(trade_id)마다 한 줄. 버전 하나 = Iceberg 스냅샷 하나"),
+        ("rtms_changes", CHANGES, "변경 이력 — 버전마다 I·U·D(앞뒤 원문·바뀐 칸). 쌓기만"),
+        ("rtms_versions", VERSIONS, "버전 목록 — 스냅샷·건수·두 표의 Iceberg 스냅샷 번호")):
+        try:
+            tbl = 표(cat, name, schema)
+            snaps_t = list(tbl.snapshots()); cur_id = tbl.current_snapshot().snapshot_id if tbl.current_snapshot() else None
+            dn, db_ = _dirstat(os.path.join(LAKE, "wh", NS, name, "data"), ".parquet")
+            mn, mb = _dirstat(os.path.join(LAKE, "wh", NS, name, "metadata"))
+            rows = len(읽기(tbl))
+            out["레이크"].append({
+                "표": name, "설명": 설명, "칸수": len(schema), "칸": [f.name for f in schema],
+                "행_현재": rows, "버전수": len(snaps_t), "현재스냅샷id": str(cur_id) if cur_id else None,
+                "parquet수": dn, "parquet용량": db_, "메타수": mn, "메타용량": mb})
+        except Exception as e:
+            out["레이크"].append({"표": name, "오류": str(e)[:200]})
+    out["레이크_meta"] = {
+        "엔진": "Apache Iceberg (PyIceberg)", "카탈로그": "SQLite · data/dqm/lake/catalog.db",
+        "창고": "data/dqm/lake/wh/ (Parquet)", "읽기": "DuckDB / PyArrow", "표목록": cat_tbls}
+
+    # 어떻게 비교하나 (파이프라인)
+    out["비교"] = [
+        {"단계": "1. 받기", "무엇": "원천 API 를 묶음(종목×시군구×계약월)으로 받아 .json 으로 저장", "어디": "dqm_probe.py snap → data/dqm/snap/"},
+        {"단계": "2. 묶음 비교", "무엇": "어제 묶음 A · 오늘 묶음 B 의 '줄 전체 해시' 를 개수째 비교 → 같은 줄 빠지고 −(어제만)·+(오늘만)만 남음", "어디": "dqm_probe.묶음비교()"},
+        {"단계": "3. 짝짓기", "무엇": "남은 것끼리 '정체성 해시'(값 칸 뺀 것)로 짝: −1·+1=U · 짝없는 −=D · +=I · 여럿=애매", "어디": "dqm_probe.묶음비교()"},
+        {"단계": "4. 버전 쌓기", "무엇": "그날 상태를 rtms_state 로 덮어쓰고(= Iceberg 스냅샷 1개), 바뀐 것을 rtms_changes 에 append", "어디": "dqm_lake.py build"},
+        {"단계": "5. 유실 검증", "무엇": "앞 상태 + 그 버전 변경 = 그 버전 상태 · 그 상태 = 원천 스냅샷(해시 개수까지) 을 매일 자동 확인", "어디": "dqm_lake.py check"}]
+
+    p = os.path.abspath(os.path.join(LAKE, "..", "arch.json")); tmp = p + ".tmp"
+    json.dump(out, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1); os.replace(tmp, p)
+    print(f"→ {p} · 단계 {len(out['단계'])} · 레이크표 {len(out['레이크'])} · {os.path.getsize(p)}B")
+
+
 def cmd_dashboard(a):
     """터무니 관리자 화면(내정보 → DQM)용 요약 → data/dqm/dashboard.json (웹은 이 파일만 읽는다 · Iceberg 는 작업 큐에서만 읽힘)."""
     cat = 카탈로그(); vs = 버전목록(cat); ch = 읽기(표(cat, "rtms_changes", CHANGES))
@@ -419,7 +512,7 @@ def cmd_expire(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
-    sp.add_parser("build"); sp.add_parser("versions"); sp.add_parser("check"); sp.add_parser("dashboard"); sp.add_parser("trace")
+    sp.add_parser("build"); sp.add_parser("versions"); sp.add_parser("check"); sp.add_parser("dashboard"); sp.add_parser("trace"); sp.add_parser("arch")
     s = sp.add_parser("asof"); s.add_argument("--version", type=int); s.add_argument("--date"); s.add_argument("--trade", type=int)
     s = sp.add_parser("changes"); s.add_argument("--since", type=int, default=0); s.add_argument("--show", type=int, default=5); s.add_argument("--out")
     s = sp.add_parser("restore"); s.add_argument("--version", type=int, required=True); s.add_argument("--dry", action="store_true")

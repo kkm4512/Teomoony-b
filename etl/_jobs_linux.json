@@ -222,5 +222,30 @@
     "sh",
     "-c",
     "python ms_q.py ../deploy/sql/963_apply_aptseq.sql && python svc_publish.py --mode ids --kinds detail --workers 4 --ids 37903 39889 40737 416375"
+  ],
+  "zq-probe-pre-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_pre1121.sql"
+  ],
+  "zq-probe-pre2-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_pre2.sql"
+  ],
+  "zq-status-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_status.sql"
+  ],
+  "zq-probe-precx-par": [
+    "python",
+    "ms_q.py",
+    "../deploy/sql/963_probe_pre_cx.sql"
+  ],
+  "zq-dqm-arch-par": [
+    "python",
+    "dqm_lake.py",
+    "arch"
   ]
 }
