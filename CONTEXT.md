@@ -11293,3 +11293,9 @@ v_lawd_map 3개 동         5,568ms → 37ms
   담는 것: 단계별 저장소(① snap JSON+manifest sha256 · ② SQL Server silver.rtms_trade nat_key · ③ dqm_rules.yaml+ops 표 · ④ Iceberg) · 레이크 표별(칸·행·버전수·parquet수+용량·metadata수+용량·현재 스냅샷id) · 비교 5단계(받기→묶음비교→짝짓기→build→check).
   실측(11-23): ① snap 14개 662파일 144MB(최신 27.3MB · 150묶음 49,607줄) · ② 적재 11,094,923줄 · ④ state 행49,607/버전31/parquet16(32.7MB)/meta95, changes 51,510행/parquet4.0MB, versions 16행. catalog=SQLite 20KB.
   server.js 구조읽기(mtime 캐시 · dashboard·trace 와 같은 방식) → /api/admin/dqm 에 구조 추가 · app.js DQM구조그리기 · v=20261123dqm14. web 전용이라 커밋 안 함(SSO 작업과 같은 파일).
+- 11-23 사장님 "실제 아키텍처적으로 어떤 파일에 저장되고 어떻게 비교하는지도 보고싶어": **DQM '구조(아키텍처)' 탭**.
+  `etl/dqm_lake.py arch` → data/dqm/arch.json(매일 snap 뒤 체인에 포함) · web `구조읽기()`(server.js) + `DQM구조그리기()`(app.js) · 로그인 없이 파일만 읽음.
+  단계별 저장소(실측): ① data/dqm/snap/ JSON+manifest(sha256) 144MB·14스냅샷 ② silver.rtms_trade(SQL Server) nat_key SHA-256 11,094,923줄 ③ dqm_rules.yaml 18개 + ops.dqm_rule_* · 곁표(ops.dqm_quarantine 213·rtms_gone_bak 2219·dqm_bowan 30281/확실2690·rtms_detach_log 22813) ④ Iceberg 레이크(rtms_state/changes/versions · 16버전) + **제공 PostgreSQL svc.complex_json 215만/상세 52만(매시 발행)**.
+  '어떻게 비교하나' 5단계(받기→묶음비교→짝짓기→버전쌓기→유실검증) · 레이크 표별 parquet/메타 용량.
+  ★ 11-23 추가분: arch.json 에 ③곁표 + ④제공(PG) 단계 넣음(원래 ③까지만) · app.js `DQM구조그리기` 가 `때()`를 자기 범위에 안 둬 구조 탭 열면 에러나던 것 고침(함수 안에 `때` 정의) · v=20261123dqm15 · 웹 다시 켬.
+  검증: 브라우저에서 실제 arch.json 로 DQM구조그리기 렌더 — 5단계 + 레이크 표 + 비교 5단계 정상(값: 제공 상세 520,890 등).

@@ -313,6 +313,39 @@ def cmd_arch(a):
     except Exception as e:
         out["단계"].append({"단계": "② · ③ (적재DB)", "오류": str(e)[:200]})
 
+    # ③ 곁에 쌓이는 ops 표 (원본은 안 고치고 옆에 따로)
+    try:
+        from svc_publish import env as svc_env, ms_conn
+        cur = ms_conn(svc_env()).cursor(); cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
+        def _one(q):
+            cur.execute(q); return int(cur.fetchone()[0] or 0)
+        격리 = _one("SELECT COUNT_BIG(*) FROM ops.dqm_quarantine WHERE 풀림 IS NULL")
+        사라짐 = _one("SELECT COUNT_BIG(*) FROM ops.rtms_gone_bak")
+        보완 = _one("SELECT COUNT_BIG(*) FROM ops.dqm_bowan")
+        보완확실 = _one("SELECT ISNULL(SUM(CAST(확실 AS INT)), 0) FROM ops.dqm_bowan")
+        뗌 = _one("SELECT COUNT_BIG(DISTINCT trade_sk) FROM ops.rtms_detach_log")
+        out["단계"].append({
+            "단계": "③ 곁에 쌓이는 표(ops)", "저장소": "SQL Server(적재DB)",
+            "경로": "ops.dqm_quarantine · rtms_gone_bak · dqm_bowan · rtms_detach_log",
+            "형식": "원본(silver)은 안 고치고 옆에 따로 — 격리·사라짐은 silver 에서 빼서 옮기고, 보완·뗌은 판정만",
+            "설명": "규칙 격리 %d줄 · 원천에서 사라짐 %d줄 · 보완 후보 %d줄(확실 %d) · 옛 건물이라 뗌 %d줄" % (격리, 사라짐, 보완, 보완확실, 뗌)})
+    except Exception as e:
+        out["단계"].append({"단계": "③ 곁표(ops)", "오류": str(e)[:200]})
+
+    # ④ 가공 → 제공 (PostgreSQL 서비스DB)
+    try:
+        from svc_publish import env as svc_env2, pg_conn
+        pc = pg_conn(svc_env2()).cursor()
+        pc.execute("SELECT count(*) FROM svc.complex_json"); 제공전체 = int(pc.fetchone()[0] or 0)
+        pc.execute("SELECT count(*) FROM svc.complex_json WHERE kind = 'detail'"); 제공상세 = int(pc.fetchone()[0] or 0)
+        out["단계"].append({
+            "단계": "④ 가공 → 제공", "저장소": "PostgreSQL(서비스DB)", "경로": "svc.complex_json",
+            "형식": "단지마다 미리 구운 응답(gzip JSON) · 종류별(detail·marker…) · 매시 발행",
+            "행_전체": 제공전체,
+            "설명": "검증·격리를 거친 적재DB 를 단지별 응답으로 미리 구워 둔다 — 상세 %d개. 화면·API 는 이것을 바로 내보낸다(격리된 줄은 안 담긴다)." % 제공상세})
+    except Exception as e:
+        out["단계"].append({"단계": "④ 제공(PostgreSQL)", "오류": str(e)[:200]})
+
     # ④ 버전 레이크 (Apache Iceberg)
     cat = 카탈로그()
     import sqlite3
